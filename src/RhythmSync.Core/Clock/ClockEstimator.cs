@@ -2,7 +2,8 @@ namespace RhythmSync.Core.Clock;
 
 /// <summary>
 /// NTP-style client-to-host clock estimator. Keeps a sliding window of ping exchanges, splits it into
-/// time buckets, keeps the min-RTT sample of each (least queueing noise) and fits <c>host = a + b * client</c> by least squares.
+/// time buckets, keeps the min-RTT sample of each (least queueing noise) and fits <c>host = a + b * client</c> by
+/// RTT-weighted least squares.
 /// The fit is done on values centered on the first selected sample so absolute tick counts
 /// (about 1e13 after weeks of uptime) are never squared.
 /// <para>
@@ -12,6 +13,9 @@ namespace RhythmSync.Core.Clock;
 /// </summary>
 public sealed class ClockEstimator : IClockMapping
 {
+    /// <summary>Weight floor e0 (0.5 ms): weight = 1 / (rtt - minRtt + e0)^2.</summary>
+    private const double RttWeightFloorTicks = 5000.0;
+
     private readonly long _windowTicks;
     private readonly double _keepFraction;
     private readonly int _minSamples;
@@ -21,6 +25,7 @@ public sealed class ClockEstimator : IClockMapping
     private readonly List<Sample> _samples = new();
     private Sample[] _scratch = Array.Empty<Sample>();
     private Sample[] _selected = Array.Empty<Sample>();
+    private double[] _weights = Array.Empty<double>();
 
     private volatile Fit _fit = Fit.Identity;
 
@@ -95,40 +100,54 @@ public sealed class ClockEstimator : IClockMapping
         long c0 = _selected[0].C;
         long h0 = _selected[0].H;
 
-        double sumX = 0, sumY = 0;
+        // RTT-weighted least squares: weight w = 1 / (rtt - minRtt + e0)^2, minRtt = smallest RTT in the window.
+        // A sample with large excess RTT carries a large, unknown offset error and is down-weighted accordingly.
+        long minRtt = long.MaxValue;
+        for (int i = 0; i < n; i++)
+            if (_scratch[i].Rtt < minRtt) minRtt = _scratch[i].Rtt;
+
+        if (_weights.Length < k) _weights = new double[Math.Max(k, _weights.Length * 2)];
+        double sumW = 0, sumX = 0, sumY = 0;
         for (int i = 0; i < k; i++)
         {
-            sumX += _selected[i].C - c0;
-            sumY += _selected[i].H - h0;
+            double e = (_selected[i].Rtt - minRtt) + RttWeightFloorTicks;
+            double w = 1.0 / (e * e);
+            _weights[i] = w;
+            sumW += w;
+            sumX += w * (_selected[i].C - c0);
+            sumY += w * (_selected[i].H - h0);
         }
-        double meanX = sumX / k, meanY = sumY / k;
+        double meanX = sumX / sumW, meanY = sumY / sumW;
 
         double sxx = 0, sxy = 0;
         for (int i = 0; i < k; i++)
         {
             double dx = (_selected[i].C - c0) - meanX;
             double dy = (_selected[i].H - h0) - meanY;
-            sxx += dx * dx;
-            sxy += dx * dy;
+            sxx += _weights[i] * dx * dx;
+            sxy += _weights[i] * dx * dy;
         }
         double slope = sxx > 0 ? sxy / sxx : 1.0;
         double intercept = meanY - slope * meanX;
 
-        double sse = 0;
+        double sse = 0, weightedSse = 0;
         for (int i = 0; i < k; i++)
         {
             double r = (_selected[i].H - h0) - (intercept + slope * (_selected[i].C - c0));
             sse += r * r;
+            weightedSse += _weights[i] * r * r;
         }
+        // ResidualMs: plain RMS scatter of the selected samples about the fit.
         double residualMs = Math.Sqrt(sse / k) / 10_000.0;
 
-        // Standard error (ms) of the fitted host time at the latest client time; infinite if the fit is under-determined.
+        // Weighted-fit standard error (ms) of the fitted host time at the latest client time;
+        // infinite if the fit is under-determined.
         double seMs = double.PositiveInfinity;
         if (k > 2 && sxx > 0)
         {
-            double s2 = sse / (k - 2);
+            double s2 = weightedSse / (k - 2);
             double dxLast = (lastT4 - c0) - meanX;
-            seMs = Math.Sqrt(s2 * (1.0 / k + dxLast * dxLast / sxx)) / 10_000.0;
+            seMs = Math.Sqrt(s2 * (1.0 / sumW + dxLast * dxLast / sxx)) / 10_000.0;
         }
 
         bool converged = n >= _minSamples && seMs < _convergedResidualMs;

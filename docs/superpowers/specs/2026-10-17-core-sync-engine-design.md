@@ -87,7 +87,7 @@ tests/
 | `Streamer` | Host | Converts to 16-bit with TPDF dither, packs frames, sends to every client in `Ready` state | `INetworkTransport` |
 | `ClockSyncServer` | Host | Answers pings with host receive/send timestamps | `ISessionClock` |
 | `ClockSyncClient` | Client | Sends pings (50 ms interval for first 2 s, then 250 ms); feeds `ClockEstimator` | — |
-| `ClockEstimator` | Client | Maps client time ↔ host time: keeps 60 s window, takes lowest-20%-RTT samples, least-squares fit `host = a + b·client`; exposes offset, drift (ppm), fit residual | — (pure) |
+| `ClockEstimator` | Client | Maps client time ↔ host time: keeps 60 s window, takes the min-RTT sample of each time bucket, RTT-weighted least-squares fit `host = a + b·client`; exposes offset, drift (ppm), fit residual | — (pure) |
 | `JitterBuffer` | Client | Stores frames by `seq`; reorders; reports missing/late frames; serves samples by host-time position | — (pure) |
 | `PlaybackScheduler` | Client | On each output callback: computes when the next written sample will be heard (in host time), compares with where the stream should be, drives the resampler ratio (PI) or hard-resyncs | `ClockEstimator`, `JitterBuffer`, `CubicResampler`, `Concealer` |
 | `CubicResampler` | Client | 4-point cubic Hermite fractional resampler, ratio adjustable per callback within ±500 ppm | — (pure) |
@@ -157,9 +157,9 @@ UDP 47800 discovery · TCP 47801 control · UDP 47802 audio · UDP 47803 clock.
 ### 5.2 Clock sync
 
 For each ping: `offset = ((t2 − t1) + (t3 − t4)) / 2`, `rtt = (t4 − t1) − (t3 − t2)`.
-`ClockEstimator` keeps a 60 s window, selects the lowest 20% by RTT, and least-squares fits
+`ClockEstimator` keeps a 60 s window, selects samples (see below), and fits
 `hostTime = a + b · clientTime`. `b − 1` is relative drift (typically 10–100 ppm).
-Converged = ≥ 20 selected samples and RMS residual < 0.5 ms.
+Converged = ≥ 20 selected samples and standard error of the fitted host time at the latest sample < 0.5 ms; selection = per-time-bucket min-RTT, fit = RTT-weighted least squares.
 
 ### 5.3 Host audio path
 
@@ -241,7 +241,7 @@ All hardware/network dependencies are behind interfaces (`ISessionClock`, `IAudi
 ### 8.1 Unit tests (xUnit)
 
 - **ClockEstimator:** synthetic pings with known offset and drift plus heavy-tailed, asymmetric delay
-  → offset error < 0.2 ms, drift error < 2 ppm.
+  → offset error < 0.2 ms for every seed; drift error < 8 ppm (p95 < 4 ppm) over 50 seeds — drift only matters for extrapolation, and 8 ppm × a 10 s gap = 0.08 ms.
 - **PlaybackScheduler + PI loop:** `FakeOutput` consuming at +100 ppm → converges within 10 s,
   then |error| < 0.5 ms.
 - **JitterBuffer:** reordering, duplicates, loss, late frames, gaps > 50 ms.
