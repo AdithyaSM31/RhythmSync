@@ -77,4 +77,16 @@ public class ControlCodecTests
         var ms = new MemoryStream(Frame(body.Length, body));
         await Assert.ThrowsAsync<InvalidDataException>(() => ControlCodec.ReadAsync(ms, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Non_finite_heartbeat_stats_round_trip()
+    {
+        var m = new Heartbeat(new HeartbeatStats(
+            double.NaN, double.PositiveInfinity, double.NegativeInfinity, double.NaN, double.PositiveInfinity, SyncState.Syncing));
+        var ms = new MemoryStream();
+        await ControlCodec.WriteAsync(ms, m, CancellationToken.None);
+        ms.Position = 0;
+        var read = Assert.IsType<Heartbeat>(await ControlCodec.ReadAsync(ms, CancellationToken.None));
+        Assert.Equal(m, read);
+    }
 }

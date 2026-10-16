@@ -12,6 +12,8 @@ public static class ControlCodec
     private static readonly JsonSerializerOptions Options = new()
     {
         Converters = { new JsonStringEnumConverter() },
+        // Computed stats can be NaN/Infinity (0/0 ratios, unwarmed estimator); let them round-trip.
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     public static async Task WriteAsync(Stream s, ControlMessage m, CancellationToken ct)
