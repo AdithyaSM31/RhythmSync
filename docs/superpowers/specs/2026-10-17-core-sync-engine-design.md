@@ -80,7 +80,7 @@ tests/
 
 | Unit | Runs on | Responsibility | Depends on |
 |------|---------|----------------|-----------|
-| `ISessionClock` | Both | Monotonic clock in 100 ns ticks (from `Stopwatch`). On the host this *is* session time | — |
+| `ISessionClock` | Both | Monotonic clock in 100 ns ticks: QPC converted to 100 ns, the same epoch and unit WASAPI reports in `qpcPosition`. On the host this *is* session time | — |
 | `LoopbackCapture` | Host | Captures the default render endpoint (= VB-CABLE) via WASAPI loopback; converts to 48 kHz stereo float; reports each buffer with its device sample position + QPC time | NAudio |
 | `SilenceKeeper` | Host | Plays continuous silence into the captured endpoint so loopback keeps delivering buffers when nothing is playing (keeps the timeline continuous) | NAudio |
 | `CaptureTimestamper` | Host | Fits `sessionTime = f(sampleIndex)` over a 30 s sliding window of (position, QPC) pairs; stamps each 5 ms frame `playAt = f(firstSample) + targetLatency` | `ISessionClock` |
@@ -135,7 +135,7 @@ UDP 47800 discovery · TCP 47801 control · UDP 47802 audio · UDP 47803 clock.
 
 | Message | Direction | Payload |
 |---------|-----------|---------|
-| `Hello` | C→H | deviceId (GUID, persisted), deviceName, pairingCode, protocolVersion |
+| `Hello` | C→H | deviceId (GUID, persisted), deviceName, pairingCode, protocolVersion, audioPort (client's UDP port for audio) |
 | `Welcome` | H→C | sessionId, sampleRate 48000, channels 2, frameSamples 240, targetLatencyMs, audioPort, clockPort |
 | `Reject` | H→C | reason: `BadCode` \| `LockedOut` \| `VersionMismatch` \| `SessionFull` (max 8) |
 | `Ready` | C→H | — (sent once clock estimate converges) |
