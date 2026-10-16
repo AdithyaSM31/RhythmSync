@@ -15,28 +15,37 @@ public class ClockEstimatorTests
         return est;
     }
 
+    private const int SeedCount = 50;
+
     [Fact]
     public void Recovers_offset_and_drift()
     {
-        var truth = new SyntheticPings(offsetTicks: 37_000_000, driftPpm: 80, clientStartTicks: 5 * Sec, intervalTicks: 250 * Ms, seed: 42);
-        var pings = truth.Generate(480); // 120 s at 250 ms
-        var est = Feed(pings);
-        long lastT4 = pings[^1].T4;
+        for (int seed = 1; seed <= SeedCount; seed++)
+        {
+            var truth = new SyntheticPings(offsetTicks: 37_000_000, driftPpm: 80, clientStartTicks: 5 * Sec, intervalTicks: 250 * Ms, seed: seed);
+            var pings = truth.Generate(480); // 120 s at 250 ms
+            var est = Feed(pings);
+            long lastT4 = pings[^1].T4;
 
-        Assert.InRange(est.ClientToHost(lastT4) - truth.Host(lastT4), -2000, 2000);
-        Assert.InRange(est.DriftPpm, 78, 82);
-        Assert.Equal(lastT4, est.LastSampleClientTicks);
+            long posErr = est.ClientToHost(lastT4) - truth.Host(lastT4);
+            Assert.True(posErr is >= -2000 and <= 2000, $"seed {seed}: position error {posErr} ticks");
+            Assert.True(est.DriftPpm is >= 78 and <= 82, $"seed {seed}: drift {est.DriftPpm:F2} ppm (expected 78..82)");
+            Assert.Equal(lastT4, est.LastSampleClientTicks);
+        }
     }
 
     [Fact]
     public void Converges_after_2s_of_fast_pings()
     {
-        var truth = new SyntheticPings(37_000_000, 0, 5 * Sec, 50 * Ms, seed: 8);
-        var est = Feed(truth.Generate(40));
+        for (int seed = 1; seed <= SeedCount; seed++)
+        {
+            var truth = new SyntheticPings(37_000_000, 0, 5 * Sec, 50 * Ms, seed);
+            var est = Feed(truth.Generate(40));
 
-        Assert.True(est.IsConverged);
-        Assert.True(est.ResidualMs < 0.5, $"residual {est.ResidualMs} ms");
-        Assert.True(est.EverConverged);
+            Assert.True(est.IsConverged, $"seed {seed}: not converged (residual {est.ResidualMs:F3} ms)");
+            Assert.True(est.ResidualMs < 0.5, $"seed {seed}: residual {est.ResidualMs:F3} ms");
+            Assert.True(est.EverConverged, $"seed {seed}: EverConverged false");
+        }
     }
 
     [Fact]
@@ -54,24 +63,31 @@ public class ClockEstimatorTests
     public void Large_absolute_times_keep_precision()
     {
         const long day = 86_400 * Sec;
-        var truth = new SyntheticPings(offsetTicks: -30 * day, driftPpm: 80, clientStartTicks: 60 * day, intervalTicks: 250 * Ms, seed: 42);
-        var pings = truth.Generate(480);
-        var est = Feed(pings);
-        long lastT4 = pings[^1].T4;
+        for (int seed = 1; seed <= SeedCount; seed++)
+        {
+            var truth = new SyntheticPings(offsetTicks: -30 * day, driftPpm: 80, clientStartTicks: 60 * day, intervalTicks: 250 * Ms, seed: seed);
+            var pings = truth.Generate(480);
+            var est = Feed(pings);
+            long lastT4 = pings[^1].T4;
 
-        Assert.InRange(est.ClientToHost(lastT4) - truth.Host(lastT4), -2000, 2000);
-        Assert.InRange(est.DriftPpm, 78, 82);
+            long posErr = est.ClientToHost(lastT4) - truth.Host(lastT4);
+            Assert.True(posErr is >= -2000 and <= 2000, $"seed {seed}: position error {posErr} ticks");
+            Assert.True(est.DriftPpm is >= 78 and <= 82, $"seed {seed}: drift {est.DriftPpm:F2} ppm (expected 78..82)");
+        }
     }
 
     [Fact]
     public void Window_forgets_old_drift()
     {
         long start = 5 * Sec;
-        var truth = new SyntheticPings(37_000_000, 80, start, 250 * Ms, seed: 8)
-            .WithDriftChange(start + 60 * Sec, -40);
-        var est = Feed(truth.Generate(520)); // 130 s total
+        for (int seed = 1; seed <= SeedCount; seed++)
+        {
+            var truth = new SyntheticPings(37_000_000, 80, start, 250 * Ms, seed)
+                .WithDriftChange(start + 60 * Sec, -40);
+            var est = Feed(truth.Generate(520)); // 130 s total
 
-        Assert.InRange(est.DriftPpm, -42, -38);
+            Assert.True(est.DriftPpm is >= -42 and <= -38, $"seed {seed}: drift {est.DriftPpm:F2} ppm (expected -42..-38)");
+        }
     }
 
     [Fact]
