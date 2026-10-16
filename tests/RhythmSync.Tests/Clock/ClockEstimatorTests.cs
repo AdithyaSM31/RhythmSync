@@ -15,7 +15,8 @@ public class ClockEstimatorTests
         return est;
     }
 
-    private const int SeedCount = 50;
+    private const int SeedCount = 50;       // per-seed bounds are asserted on seeds 1..50
+    private const int P95SeedCount = 500;   // the p95 drift bound is taken over seeds 1..500 (50 draws mostly measure sampling noise)
     private const double MaxDriftErrorPpm = 8;
     private const double P95DriftErrorPpm = 4;
 
@@ -24,6 +25,7 @@ public class ClockEstimatorTests
         long posErr = est.ClientToHost(atClientTicks) - trueHost;
         double driftErr = Math.Abs(est.DriftPpm - expectedDriftPpm);
         driftErrors.Add(driftErr);
+        if (seed > SeedCount) return;
         Assert.True(Math.Abs(posErr) <= 2000, $"seed {seed}: position error {posErr} ticks (max 2000), drift {est.DriftPpm:F2} ppm");
         Assert.True(driftErr <= MaxDriftErrorPpm, $"seed {seed}: drift {est.DriftPpm:F2} ppm, error {driftErr:F2} ppm from {expectedDriftPpm} (max {MaxDriftErrorPpm}), position error {posErr} ticks");
     }
@@ -39,7 +41,7 @@ public class ClockEstimatorTests
     public void Recovers_offset_and_drift()
     {
         var driftErrors = new List<double>();
-        for (int seed = 1; seed <= SeedCount; seed++)
+        for (int seed = 1; seed <= P95SeedCount; seed++)
         {
             var truth = new SyntheticPings(offsetTicks: 37_000_000, driftPpm: 80, clientStartTicks: 5 * Sec, intervalTicks: 250 * Ms, seed: seed);
             var pings = truth.Generate(480); // 120 s at 250 ms
@@ -98,7 +100,7 @@ public class ClockEstimatorTests
     {
         long start = 5 * Sec;
         var driftErrors = new List<double>();
-        for (int seed = 1; seed <= SeedCount; seed++)
+        for (int seed = 1; seed <= P95SeedCount; seed++)
         {
             var truth = new SyntheticPings(37_000_000, 80, start, 250 * Ms, seed)
                 .WithDriftChange(start + 60 * Sec, -40);
@@ -107,6 +109,7 @@ public class ClockEstimatorTests
 
             double err = Math.Abs(est.DriftPpm - -40);
             driftErrors.Add(err);
+            if (seed > SeedCount) continue;
             Assert.True(err <= MaxDriftErrorPpm, $"seed {seed}: drift {est.DriftPpm:F2} ppm, error {err:F2} ppm from -40 (max {MaxDriftErrorPpm})");
         }
         AssertDriftP95(driftErrors);
