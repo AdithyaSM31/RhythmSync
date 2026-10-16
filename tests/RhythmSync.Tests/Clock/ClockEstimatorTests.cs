@@ -62,7 +62,8 @@ public class ClockEstimatorTests
             var truth = new SyntheticPings(37_000_000, 0, 5 * Sec, 50 * Ms, seed);
             var est = Feed(truth.Generate(40));
 
-            Assert.True(est.IsConverged, $"seed {seed}: not converged (residual {est.ResidualMs:F3} ms)");
+            Assert.True(est.IsConverged, $"seed {seed}: not converged (std error {est.StdErrorMs:F3} ms, residual {est.ResidualMs:F3} ms)");
+            Assert.True(est.StdErrorMs < 0.5, $"seed {seed}: std error {est.StdErrorMs:F3} ms (max 0.5), residual {est.ResidualMs:F3} ms");
             Assert.True(est.EverConverged, $"seed {seed}: EverConverged false");
         }
     }
@@ -133,6 +134,7 @@ public class ClockEstimatorTests
         Assert.True(id.EverConverged);
         Assert.Equal(0, id.DriftPpm);
         Assert.Equal(0, id.ResidualMs);
+        Assert.Equal(0, id.StdErrorMs);
         Assert.Equal(123_456_789_012L, id.ClientToHost(123_456_789_012L));
     }
 
@@ -153,6 +155,7 @@ public class ClockEstimatorTests
         var est = new ClockEstimator();
 
         Assert.False(est.IsConverged);
+        Assert.Equal(double.PositiveInfinity, est.StdErrorMs);
         Assert.Null(est.LastSampleClientTicks);
         Assert.Equal(1_000, est.ClientToHost(1_000));
     }

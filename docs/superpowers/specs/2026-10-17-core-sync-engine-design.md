@@ -87,7 +87,7 @@ tests/
 | `Streamer` | Host | Converts to 16-bit with TPDF dither, packs frames, sends to every client in `Ready` state | `INetworkTransport` |
 | `ClockSyncServer` | Host | Answers pings with host receive/send timestamps | `ISessionClock` |
 | `ClockSyncClient` | Client | Sends pings (50 ms interval for first 2 s, then 250 ms); feeds `ClockEstimator` | — |
-| `ClockEstimator` | Client | Maps client time ↔ host time: keeps 60 s window, takes the min-RTT sample of each time bucket, RTT-weighted least-squares fit `host = a + b·client`; exposes offset, drift (ppm), fit residual | — (pure) |
+| `ClockEstimator` | Client | Maps client time ↔ host time: keeps 60 s window, takes the min-RTT sample of each time bucket, RTT-weighted least-squares fit `host = a + b·client`; exposes offset, drift (ppm), fit residual, standard error | — (pure) |
 | `JitterBuffer` | Client | Stores frames by `seq`; reorders; reports missing/late frames; serves samples by host-time position | — (pure) |
 | `PlaybackScheduler` | Client | On each output callback: computes when the next written sample will be heard (in host time), compares with where the stream should be, drives the resampler ratio (PI) or hard-resyncs | `ClockEstimator`, `JitterBuffer`, `CubicResampler`, `Concealer` |
 | `CubicResampler` | Client | 4-point cubic Hermite fractional resampler, ratio adjustable per callback within ±500 ppm | — (pure) |
@@ -151,7 +151,7 @@ UDP 47800 discovery · TCP 47801 control · UDP 47802 audio · UDP 47803 clock.
 1. Host starts → creates sessionId and 4-digit pairing code (shown in UI) → starts beacons.
 2. Client lists hosts → user selects one and enters code → `Hello`.
 3. Host validates → `Welcome` (or `Reject`; 3 bad codes from one deviceId → 30 s lockout).
-4. Client starts fast clock sync. When ≥ 20 good samples and fit residual < 0.5 ms → `Ready`.
+4. Client starts fast clock sync. When the clock estimate is converged (≥ 20 selected samples and standard error < 0.5 ms, §5.2) → `Ready`.
 5. Host adds client to `Streamer`. Client buffers until the first frame's `playAt` is reached, then plays.
 
 ### 5.2 Clock sync
@@ -202,7 +202,7 @@ Audio threads registered with MMCSS ("Pro Audio"). No allocations in the audio p
 | One frame lost | `Concealer` repeats previous 5 ms with crossfade |
 | Gap > 50 ms | Fade to silence; fade in when data resumes |
 | Frame arrives after its `playAt` | Dropped, counted. > 5% late over 10 s → UI: "Wi-Fi congested – try higher latency" |
-| Clock fit residual > 2 ms or no selected samples for 10 s | Keep playing on last drift estimate; state `Degraded` |
+| Clock estimate standard error > 1 ms, or no new samples for 10 s | Keep playing on last drift estimate; state `Degraded` |
 | 3 missed heartbeats (host gone) | Fade out; auto-reconnect for 60 s reusing deviceId (no code re-entry); then `Disconnected` |
 | 3 missed heartbeats (client gone) | Host stops streaming to it, marks offline |
 | `SetLatency` received | Frames' `playAt` jump → handled as hard resync |

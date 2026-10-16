@@ -29,6 +29,7 @@ public sealed class ClockEstimator : IClockMapping
 
     private volatile Fit _fit = Fit.Identity;
 
+    /// <param name="convergedResidualMs">Convergence threshold in ms, compared against <see cref="StdErrorMs"/> (not <see cref="ResidualMs"/>).</param>
     public ClockEstimator(long windowTicks = 600_000_000, double keepFraction = 0.2, int minSamples = 20, double convergedResidualMs = 0.5)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(windowTicks, 0);
@@ -45,6 +46,7 @@ public sealed class ClockEstimator : IClockMapping
     public bool IsConverged => _fit.IsConverged;
     public double DriftPpm => _fit.DriftPpm;
     public double ResidualMs => _fit.ResidualMs;
+    public double StdErrorMs => _fit.StdErrorMs;
     public long? LastSampleClientTicks => _fit.LastSampleClientTicks;
     public bool EverConverged => _fit.EverConverged;
     public int SampleCount => _fit.SampleCount;
@@ -151,7 +153,7 @@ public sealed class ClockEstimator : IClockMapping
         }
 
         bool converged = n >= _minSamples && seMs < _convergedResidualMs;
-        return new Fit(c0, h0, intercept, slope, residualMs, converged, _fit.EverConverged || converged, (slope - 1.0) * 1e6, lastT4, n);
+        return new Fit(c0, h0, intercept, slope, residualMs, seMs, converged, _fit.EverConverged || converged, (slope - 1.0) * 1e6, lastT4, n);
     }
 
     private readonly record struct Sample(long C, long H, long Rtt);
@@ -164,9 +166,9 @@ public sealed class ClockEstimator : IClockMapping
 
     private sealed record Fit(
         long C0, long H0, double Intercept, double Slope,
-        double ResidualMs, bool IsConverged, bool EverConverged, double DriftPpm,
+        double ResidualMs, double StdErrorMs, bool IsConverged, bool EverConverged, double DriftPpm,
         long? LastSampleClientTicks, int SampleCount)
     {
-        public static readonly Fit Identity = new(0, 0, 0, 1.0, 0, false, false, 0, null, 0);
+        public static readonly Fit Identity = new(0, 0, 0, 1.0, 0, double.PositiveInfinity, false, false, 0, null, 0);
     }
 }
