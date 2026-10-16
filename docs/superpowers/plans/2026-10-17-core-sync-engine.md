@@ -210,11 +210,11 @@ public static TheoryData<ControlMessage> All => new() {
 public interface ISessionClock { long NowTicks { get; } }
 public sealed class StopwatchClock : ISessionClock   // NowTicks = QPC * 10_000_000 / Stopwatch.Frequency, computed without overflow (Int128 or split div/mod)
 public interface IClockMapping {
-  bool IsConverged { get; } double DriftPpm { get; } double ResidualMs { get; }
+  bool IsConverged { get; } double DriftPpm { get; } double ResidualMs { get; } double StdErrorMs { get; }  // StdErrorMs: weighted SE of fitted host time at latest sample (ruling R7)
   long? LastSampleClientTicks { get; } bool EverConverged { get; }
   long ClientToHost(long clientTicks);
 }
-public sealed class IdentityClockMapping : IClockMapping   // converged, drift 0, residual 0, ClientToHost(x) == x
+public sealed class IdentityClockMapping : IClockMapping   // converged, drift 0, residual 0, std error 0, ClientToHost(x) == x
 public sealed class ClockEstimator : IClockMapping {
   public ClockEstimator(long windowTicks = 600_000_000, double keepFraction = 0.2, int minSamples = 20, double convergedResidualMs = 0.5);
   public void AddSample(long t1, long t2, long t3, long t4);
@@ -527,7 +527,7 @@ public sealed class ClockSyncClient : IDisposable {
   public long PingsSent { get; }
 }
 public static class SyncStateEvaluator {
-  // !EverConverged → Syncing; ResidualMs > 2 or (LastSampleClientTicks != null && now − LastSampleClientTicks > 10 s) → Degraded; else InSync
+  // !EverConverged → Syncing; StdErrorMs > 1 or (LastSampleClientTicks != null && now − LastSampleClientTicks > 10 s) → Degraded; else InSync
   public static SyncState Evaluate(IClockMapping m, long nowClientTicks);
 }
 public sealed class Streamer : IFrameSink {
@@ -564,7 +564,7 @@ public sealed record SimLinkProfile(double BaseDelayMs = 0.5, double JitterMeanM
 [Fact] public void Pings_and_pongs_with_wrong_session_are_ignored()
 [Fact] public void Streamer_fans_out_identical_frames()     // 2 clients + LocalSink get the same seq/playAt/pcm; after RemoveClient no more sends to it
 [Fact] public void Client_pipeline_drops_wrong_session_and_garbage() // Received unchanged
-[Theory] /* SyncStateEvaluator: never converged → Syncing; converged → InSync; residual 2.5 → Degraded; last sample 11 s ago → Degraded */
+[Theory] /* SyncStateEvaluator: never converged → Syncing; converged → InSync; std error 1.5 ms → Degraded; last sample 11 s ago → Degraded */
 ```
 
 - [ ] **Step 2: Run to verify failure.** — `--filter "FullyQualifiedName~ClockSyncTests|FullyQualifiedName~StreamerTests|FullyQualifiedName~ClientPipelineTests|FullyQualifiedName~SyncStateEvaluatorTests"`
