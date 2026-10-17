@@ -1,7 +1,7 @@
 namespace RhythmSync.Platform.Windows;
 
 /// <summary>
-/// Decides how the render loop reacts to WASAPI exceptions and guarantees <c>DeviceInvalidated</c> is claimed at most once.
+/// Decides how a render or capture loop reacts to WASAPI exceptions and guarantees <c>DeviceInvalidated</c> is claimed at most once.
 /// </summary>
 internal sealed class RenderFaultPolicy
 {

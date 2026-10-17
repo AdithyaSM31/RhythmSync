@@ -44,4 +44,62 @@ public class PcmConverterTests
         ulong pos = 30UL * 24 * 3600 * freq + freq / 2;
         Assert.Equal(30L * 24 * 3600 * 48000 + 24000, WasapiRenderOutput.ScaleToFrames(pos, freq, 48000));
     }
+
+    [Fact]
+    public void FromInt16_scales_to_unit_range()
+    {
+        var src = new byte[6];
+        MemoryMarshal.Cast<byte, short>(src.AsSpan()).Fill(0);
+        var shorts = MemoryMarshal.Cast<byte, short>(src.AsSpan());
+        shorts[0] = 0; shorts[1] = short.MaxValue; shorts[2] = short.MinValue;
+        var dst = new float[3];
+
+        PcmConverter.FromInt16(src, dst);
+
+        Assert.Equal(0f, dst[0]);
+        Assert.Equal(32767f / 32768f, dst[1]);
+        Assert.Equal(-1f, dst[2]);
+    }
+
+    [Fact]
+    public void FromInt24_sign_extends_little_endian()
+    {
+        var src = new byte[] { 0xFF, 0xFF, 0x7F, 0x00, 0x00, 0x80, 0x00, 0x00, 0x40, 0, 0, 0 };
+        var dst = new float[4];
+
+        PcmConverter.FromInt24(src, dst);
+
+        Assert.Equal(8_388_607f / 8_388_608f, dst[0]);
+        Assert.Equal(-1f, dst[1]);
+        Assert.Equal(0.5f, dst[2]);
+        Assert.Equal(0f, dst[3]);
+    }
+
+    [Fact]
+    public void FromInt32_scales_to_unit_range()
+    {
+        var src = new byte[12];
+        var ints = MemoryMarshal.Cast<byte, int>(src.AsSpan());
+        ints[0] = 0; ints[1] = int.MinValue; ints[2] = 1 << 30;
+        var dst = new float[3];
+
+        PcmConverter.FromInt32(src, dst);
+
+        Assert.Equal(0f, dst[0]);
+        Assert.Equal(-1f, dst[1]);
+        Assert.Equal(0.5f, dst[2]);
+    }
+
+    [Fact]
+    public void Int16_round_trip_is_within_one_step()
+    {
+        var original = new[] { 0f, 0.25f, -0.75f, 0.999f };
+        var bytes = new byte[original.Length * 2];
+        var back = new float[original.Length];
+
+        PcmConverter.ToInt16(original, bytes);
+        PcmConverter.FromInt16(bytes, back);
+
+        for (int i = 0; i < original.Length; i++) Assert.Equal(original[i], back[i], 1e-4f);
+    }
 }
