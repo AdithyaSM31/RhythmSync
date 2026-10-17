@@ -73,4 +73,84 @@ public class WasapiRenderOutputLifecycleTests(ITestOutputHelper log)
         using var output = factory.Create();
         Assert.True(output.SampleRate > 0);
     }
+
+    private sealed class SilentCallback : IRenderCallback
+    {
+        public void Render(Span<float> stereo, in RenderTiming timing) => stereo.Clear();
+    }
+
+    /// <summary>The app creates outputs on the WPF STA thread; Stop comes from elsewhere and must not stall on apartment marshalling.</summary>
+    [Theory, Trait("Category", "Hardware")]
+    [InlineData(false)]     // creating STA thread has exited (worst case for non-agile objects)
+    [InlineData(true)]      // creating STA thread is alive and waiting (pumping wait)
+    public void Output_created_and_started_on_sta_thread_stops_quickly_from_another_thread(bool keepStaAlive)
+    {
+        WasapiRenderOutput? output = null;
+        Exception? failure = null;
+        using var created = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                output = new WasapiRenderOutput(null);
+                output.Start(new SilentCallback());
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { created.Set(); }
+            if (keepStaAlive) release.Wait();
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        Assert.True(created.Wait(5000));
+        Assert.Null(failure);
+        Thread.Sleep(300);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        output!.Stop();
+        sw.Stop();
+        release.Set();
+
+        log.WriteLine($"Stop took {sw.ElapsedMilliseconds} ms (keepStaAlive={keepStaAlive})");
+        Assert.True(sw.ElapsedMilliseconds < 1000, $"Stop took {sw.ElapsedMilliseconds} ms");
+        Assert.True(output.IsReleased, "COM objects were not released");
+
+        using var second = new WasapiRenderOutput(null);
+        second.Start(new SilentCallback());
+        Thread.Sleep(100);
+        second.Stop();
+    }
+
+    [Fact, Trait("Category", "Hardware")]
+    public void Default_device_change_is_reported_off_the_notification_thread_exactly_once_and_allows_stop()
+    {
+        using var output = new WasapiRenderOutput(null);
+        output.Start(new SilentCallback());
+        int raised = 0;
+        int handlerThread = -1;
+        using var done = new ManualResetEventSlim();
+        output.DeviceInvalidated += () =>
+        {
+            Interlocked.Increment(ref raised);
+            handlerThread = Environment.CurrentManagedThreadId;
+            output.Stop();          // a subscriber stopping synchronously must be safe
+            done.Set();
+        };
+
+        int callerThread = -1;
+        var caller = new Thread(() =>
+        {
+            callerThread = Environment.CurrentManagedThreadId;
+            output.OnDefaultRenderChanged();    // stands in for the Core Audio notification thread
+            output.OnDefaultRenderChanged();
+        });
+        caller.Start();
+        caller.Join();
+
+        Assert.True(done.Wait(2000), "DeviceInvalidated was not raised");
+        Thread.Sleep(200);
+        Assert.Equal(1, raised);
+        Assert.NotEqual(callerThread, handlerThread);
+        Assert.True(output.IsReleased);
+    }
 }

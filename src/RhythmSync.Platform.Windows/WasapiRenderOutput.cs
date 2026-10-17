@@ -17,15 +17,10 @@ public sealed class WasapiRenderOutput : IAudioOutput
 
     private const int BufferDurationHns = 100_000;          // 10 ms, in 100 ns units
     private const int WaitTimeoutMs = 1000;
-    private const int MaxConsecutiveWasapiErrors = 20;
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(2);
 
-    // AUDCLNT_E_DEVICE_INVALIDATED, _RESOURCES_INVALIDATED, _SERVICE_NOT_RUNNING, HRESULT_FROM_WIN32(ERROR_NOT_FOUND)
-    private static bool IsDeviceGone(int hr) =>
-        hr == unchecked((int)0x88890004) || hr == unchecked((int)0x88890026) ||
-        hr == unchecked((int)0x88890010) || hr == unchecked((int)0x80070490);
-
     private readonly object _lifecycle = new();
+    private readonly RenderFaultPolicy _policy = new();
     private readonly string _endpointId;
     private readonly bool _followsDefault;
     private readonly SampleKind _kind;
@@ -47,9 +42,8 @@ public sealed class WasapiRenderOutput : IAudioOutput
     private Thread? _thread;
     private bool _started;
     private bool _stopped;
-    private long _framesWritten;
+    private WriteCursor? _cursor;
     private long _callbackFaults;
-    private int _invalidatedRaised;
     private int _released;
 
     /// <param name="deviceId">Render endpoint id, or null to use (and follow) the system default device.</param>
@@ -89,7 +83,16 @@ public sealed class WasapiRenderOutput : IAudioOutput
     /// <summary>Number of render periods in which the callback threw and silence was written instead.</summary>
     public long CallbackFaults => Interlocked.Read(ref _callbackFaults);
 
+    /// <summary>
+    /// Raised at most once per instance when the device is lost or (for a default-device output) the default changes.
+    /// Threading: a lost device is reported on the render thread (which then exits); a default-device change or
+    /// endpoint removal is reported on a thread-pool thread, never on the Core Audio notification thread. No lock is held,
+    /// so subscribers may call <see cref="Stop"/>/<see cref="Dispose"/> directly, but they should normally just set a flag.
+    /// </summary>
     public event Action? DeviceInvalidated;
+
+    /// <summary>True once the COM objects have been released (test hook).</summary>
+    internal bool IsReleased => Volatile.Read(ref _released) == 1;
 
     public void Start(IRenderCallback cb)
     {
@@ -111,7 +114,7 @@ public sealed class WasapiRenderOutput : IAudioOutput
                 int prime = _bufferFrames - _client.CurrentPadding;
                 _render.GetBuffer(prime);
                 _render.ReleaseBuffer(prime, AudioClientBufferFlags.Silent);
-                _framesWritten = prime;
+                _cursor = new WriteCursor(prime, prime);
 
                 _watcher = new DeviceWatcher();
                 _watcher.DefaultRenderChanged += OnDefaultRenderChanged;
@@ -160,15 +163,20 @@ public sealed class WasapiRenderOutput : IAudioOutput
 
     public void Dispose() => Stop();
 
-    private void OnDefaultRenderChanged()
+    // These run on a Core Audio notification thread. A subscriber that calls Stop()/Dispose() would unregister the
+    // endpoint callback from inside a notification, which Windows documents as a deadlock, so hop to the pool first.
+    internal void OnDefaultRenderChanged()
     {
-        if (_followsDefault) RaiseInvalidated();
+        if (_followsDefault) RaiseInvalidatedOffThread();
     }
 
     private void OnDeviceRemoved(string id)
     {
-        if (string.Equals(id, _endpointId, StringComparison.OrdinalIgnoreCase)) RaiseInvalidated();
+        if (string.Equals(id, _endpointId, StringComparison.OrdinalIgnoreCase)) RaiseInvalidatedOffThread();
     }
+
+    private void RaiseInvalidatedOffThread() =>
+        ThreadPool.UnsafeQueueUserWorkItem(static self => self.RaiseInvalidated(), this, preferLocal: false);
 
     private void DisposeWatcher()
     {
@@ -180,7 +188,7 @@ public sealed class WasapiRenderOutput : IAudioOutput
     private void RaiseInvalidated()
     {
         if (Volatile.Read(ref _stopped)) return;
-        if (Interlocked.Exchange(ref _invalidatedRaised, 1) == 1) return;
+        if (!_policy.TryClaimInvalidation()) return;
         try { DeviceInvalidated?.Invoke(); } catch { /* a faulty subscriber must not kill the audio or COM thread */ }
     }
 
@@ -190,7 +198,6 @@ public sealed class WasapiRenderOutput : IAudioOutput
         try
         {
             WaitHandle[] handles = { _stopEvent, _bufferEvent };
-            int consecutiveErrors = 0;
             while (true)
             {
                 int signalled = WaitHandle.WaitAny(handles, WaitTimeoutMs);
@@ -200,17 +207,12 @@ public sealed class WasapiRenderOutput : IAudioOutput
                 try
                 {
                     RenderPeriod();
-                    consecutiveErrors = 0;
+                    _policy.Succeeded();
                 }
-                catch (COMException ex) when (IsDeviceGone(ex.HResult))
+                catch (Exception ex)
                 {
-                    RaiseInvalidated();
-                    break;
-                }
-                catch (Exception)
-                {
-                    // Persistent unexpected WASAPI failures mean the stream is unusable: report it like a lost device.
-                    if (++consecutiveErrors >= MaxConsecutiveWasapiErrors)
+                    // A lost device, or persistent failures that mean the stream is unusable, are reported as invalidation.
+                    if (_policy.ShouldInvalidate(ex))
                     {
                         RaiseInvalidated();
                         break;
@@ -232,8 +234,8 @@ public sealed class WasapiRenderOutput : IAudioOutput
 
         _clock!.GetPosition(out ulong position, out ulong qpcPosition);
         long devicePosition = ScaleToFrames(position, _clockFrequency, SampleRate);
-        // Normally the write cursor is ahead of the playback cursor; after an underrun it can fall behind.
-        long writePosition = Math.Max(_framesWritten, devicePosition);
+        WriteCursor cursor = _cursor!;
+        long writePosition = cursor.Begin(devicePosition);
         long qpcTicks = (long)qpcPosition;     // already 100 ns, same epoch as StopwatchClock
 
         IntPtr buffer = _render!.GetBuffer(frames);
@@ -247,24 +249,20 @@ public sealed class WasapiRenderOutput : IAudioOutput
         }
         finally
         {
+            // Once ReleaseBuffer succeeds the frames are committed (as silence if writing failed), so the cursor
+            // advances even when an exception is propagating.
             _render.ReleaseBuffer(frames, flags);
+            cursor.Commit(writePosition, frames);
         }
-        _framesWritten = writePosition + frames;
     }
 
     /// <summary>Fills <paramref name="stereo"/> via the callback in chunks of at most one second; silence if it throws.</summary>
     private void RenderCallback(Span<float> stereo, long devicePosition, long qpcTicks, long writePosition)
     {
         IRenderCallback cb = _callback!;
-        int totalFrames = stereo.Length / 2;
         try
         {
-            for (int done = 0; done < totalFrames; )
-            {
-                int n = Math.Min(totalFrames - done, SampleRate);
-                cb.Render(stereo.Slice(done * 2, n * 2), new RenderTiming(devicePosition, qpcTicks, writePosition + done));
-                done += n;
-            }
+            RenderChunker.Render(cb, stereo, SampleRate, devicePosition, qpcTicks, writePosition);
         }
         catch (Exception)
         {
