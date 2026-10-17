@@ -24,7 +24,7 @@ public sealed partial class ClientViewModel : ObservableObject
     public const string RejectedText = "Join was rejected";
     public const string SearchingText = "Looking for hosts…";
     public const string AudioDeviceText = "Can't open the audio device – check your sound settings.";
-    public const string Unknown = "—";
+    public const string Unknown = StatFormat.Unknown;
 
     public const float MaxVolume = 1f;
     public const double MaxOffsetMs = 100;
@@ -188,19 +188,12 @@ public sealed partial class ClientViewModel : ObservableObject
     /// <summary>A problem worth showing next to the status, e.g. the audio device cannot be opened; null when all is well.</summary>
     public string? StatusMessage => State == SyncState.Syncing && _outputFailures > _failureBaseline ? AudioDeviceText : null;
 
-    public string SyncErrorText => $"Sync error: {Format(_stats?.SyncErrorMs, 2)}{Suffix(_stats?.SyncErrorMs, " ms")}";
-    public string DriftText => $"Drift correction: {Format(_stats?.RatioPpm, 0)}{Suffix(_stats?.RatioPpm, " ppm")}";
+    public string SyncErrorText => $"Sync error: {StatFormat.WithUnit(_stats?.SyncErrorMs, 2, "ms")}";
+    public string DriftText => $"Drift correction: {StatFormat.WithUnit(_stats?.RatioPpm, 0, "ppm")}";
 
     public string CountersText => _stats is { } s
         ? $"Resyncs: {s.Resyncs} · Concealed frames: {s.ConcealedFrames} · Late frames: {s.LateFrames}"
         : $"Resyncs: {Unknown} · Concealed frames: {Unknown} · Late frames: {Unknown}";
-
-    private static string Format(double? value, int decimals)
-        => value is { } v && double.IsFinite(v)
-            ? (Math.Round(v, decimals) + 0.0).ToString("F" + decimals, CultureInfo.InvariantCulture)   // + 0.0 turns -0 into 0
-            : Unknown;
-
-    private static string Suffix(double? value, string unit) => value is { } v && double.IsFinite(v) ? unit : "";
 
     partial void OnStateChanged(SyncState value)
     {

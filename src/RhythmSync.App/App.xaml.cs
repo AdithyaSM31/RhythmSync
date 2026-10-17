@@ -14,20 +14,20 @@ using Serilog;
 
 namespace RhythmSync.App;
 
-/// <summary>Composition root: wires settings, discovery, the client session, the ticker, the tray and the window together.</summary>
+/// <summary>Composition root: wires settings, discovery, the client and host services, the ticker, the tray and the window together.</summary>
 public partial class App : Application
 {
     private const int DiscoveryPort = 47800;
     private static readonly TimeSpan UiRefreshInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan NetworkCheckInterval = TimeSpan.FromSeconds(15);
 
-    private SettingsStore _store = null!;
-    private AppSettings _settings = null!;
+    private SettingsPersister _settings = null!;
     private MainWindow _window = null!;
     private MainViewModel _main = null!;
     private TrayIcon? _tray;
     private DiscoveryListener? _listener;
-    private ClientSession? _session;
+    private ClientSessionHolder? _client;
+    private HostRuntime? _host;
     private SessionTicker? _ticker;
     private DispatcherTimer? _refreshTimer;
     private DispatcherTimer? _networkTimer;
@@ -65,38 +65,47 @@ public partial class App : Application
 
     private void Compose(StartupOptions options, string dataDir)
     {
-        _store = new SettingsStore(dataDir);
-        _settings = _store.Load();
+        var store = new SettingsStore(dataDir);
+        _settings = new SettingsPersister(store, store.Load());
 
         var clock = new StopwatchClock();
-        _session = new ClientSession(new ClientSessionOptions(_settings.DeviceId, _settings.DeviceName), clock,
-            new UdpDatagramChannelFactory(), new WasapiOutputFactory(() => null));
-        var adapter = new ClientSessionAdapter(_session);
-
         Action<Action> post = a => Dispatcher.BeginInvoke(a);
-        var client = new ClientViewModel(() => _listener?.Hosts ?? Array.Empty<DiscoveredHost>(),
-            (endpoint, code) => adapter.JoinAsync(endpoint, code), adapter, post)
+
+        // The client session is created on the first join and disposed while hosting, so the two modes never share ports.
+        var client = new ClientSessionHolder(() => new ClientSession(
+            new ClientSessionOptions(_settings.Current.DeviceId, _settings.Current.DeviceName), clock,
+            new UdpDatagramChannelFactory(), new WasapiOutputFactory(() => null)));
+        _client = client;
+        var clientVm = new ClientViewModel(() => _listener?.Hosts ?? Array.Empty<DiscoveredHost>(),
+            (endpoint, code) => client.JoinAsync(endpoint, code), client, post)
         {
-            Code = _settings.LastPairingCode ?? "",
+            Code = _settings.Current.LastPairingCode ?? "",
         };
-        client.Joined += OnJoined;
-        _main = new MainViewModel(client, post);
+        clientVm.Joined += OnJoined;
 
-        StartListener(client, clock);
+        _host = new HostRuntime(new WindowsHostEnvironment(), clock, _settings, post, client.ReleaseAsync, client.Allow);
+        var hostTab = new HostTabViewModel(_host, _settings.Current.DeviceName);
+        _main = new MainViewModel(clientVm, post, hostTab);
 
-        // 10 ms ticks and 1 ms timer resolution only while a session is active; ~100 ms when disconnected.
-        _ticker = new SessionTicker(_session.Tick, _listener is null ? null : _listener.Tick,
-            isActive: () => adapter.State != SyncState.Disconnected);
+        StartListener(clientVm, clock);
+
+        // 10 ms ticks and 1 ms timer resolution only while a session is active (joined as a client, or hosting).
+        _ticker = new SessionTicker(Tick, _listener is null ? null : _listener.Tick,
+            isActive: () => client.State != SyncState.Disconnected || _host.IsHosting);
 
         _window = new MainWindow { DataContext = _main };
         _tray = new TrayIcon(_window.ToggleVisibility, Quit);
-        client.PropertyChanged += (_, args) =>
+        clientVm.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ClientViewModel.StatusText)) _tray?.SetStatus(client.StatusText);
+            if (args.PropertyName == nameof(ClientViewModel.StatusText)) _tray?.SetStatus(clientVm.StatusText);
         };
-        _tray.SetStatus(client.StatusText);
+        _tray.SetStatus(clientVm.StatusText);
 
-        _refreshTimer = new DispatcherTimer(UiRefreshInterval, DispatcherPriority.Normal, (_, _) => client.Refresh(), Dispatcher);
+        _refreshTimer = new DispatcherTimer(UiRefreshInterval, DispatcherPriority.Normal, (_, _) =>
+        {
+            clientVm.Refresh();
+            _host?.Poll();   // heartbeats do not raise ClientsChanged
+        }, Dispatcher);
         _networkTimer = new DispatcherTimer(NetworkCheckInterval, DispatcherPriority.Background, async (_, _) => await CheckNetworkAsync(), Dispatcher);
 
         DispatcherUnhandledException += (_, args) => Log.Error(args.Exception, "Unhandled UI exception");
@@ -105,9 +114,18 @@ public partial class App : Application
         SessionEnding += (_, _) => _window.AllowClose = true;
 
         _window.Show();
-        client.RefreshHosts();
+        clientVm.RefreshHosts();
         _ = CheckNetworkAsync();
-        if (!options.SkipFirewall && !_settings.FirewallConfigured) _ = SetUpFirewallAsync();
+        if (!options.SkipFirewall && !_settings.Current.FirewallConfigured) _ = SetUpFirewallAsync();
+    }
+
+    /// <summary>One ticker tick: the client session and the host each get their turn even if the other throws.</summary>
+    private void Tick()
+    {
+        try { _client?.Tick(); }
+        catch (Exception e) { Log.Error(e, "Client tick failed"); }
+        try { _host?.Tick(); }
+        catch (Exception e) { Log.Error(e, "Host tick failed"); }
     }
 
     private void StartListener(ClientViewModel client, ISessionClock clock)
@@ -130,10 +148,7 @@ public partial class App : Application
     }
 
     private void OnJoined(DiscoveredHost host, string code)
-    {
-        _settings = _settings with { LastHostName = host.Name, LastPairingCode = code };
-        SaveSettings();
-    }
+        => _settings.Update(s => s with { LastHostName = host.Name, LastPairingCode = code }, immediate: true);
 
     private async Task SetUpFirewallAsync()
     {
@@ -142,10 +157,7 @@ public partial class App : Application
         try
         {
             if (await Task.Run(() => FirewallSetup.EnsureRules(exe)))
-            {
-                _settings = _settings with { FirewallConfigured = true };
-                SaveSettings();
-            }
+                _settings.Update(s => s with { FirewallConfigured = true }, immediate: true);
         }
         catch (Exception ex)
         {
@@ -162,34 +174,34 @@ public partial class App : Application
         finally { _checkingNetwork = false; }
     }
 
-    private void SaveSettings()
-    {
-        try { _store.Save(_settings); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Log.Warning(ex, "Could not save settings"); }
-    }
-
     private async void Quit()
     {
         if (_quitting) return;
         _quitting = true;
-        try
-        {
-            _refreshTimer?.Stop();
-            _networkTimer?.Stop();
-            _ticker?.Dispose();   // first, so nothing ticks a session that is being torn down
-            if (_session is not null) await _session.DisposeAsync();   // also closes its audio output
-            _listener?.Dispose();
-            _tray?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Error while shutting down");
-        }
-        finally
-        {
-            _window.AllowClose = true;
-            Log.CloseAndFlush();
-            Shutdown();
-        }
+
+        // Each step has its own try/catch so one failure cannot skip the rest.
+        Step("timers", () => { _refreshTimer?.Stop(); _networkTimer?.Stop(); });
+        Step("ticker", () => _ticker?.Dispose());   // first, so nothing ticks a session that is being torn down
+        await StepAsync("host", async () => { if (_host is not null) await _host.StopAsync(); });
+        await StepAsync("client session", async () => { if (_client is not null) await _client.DisposeAsync(); });   // also closes its audio output
+        Step("discovery listener", () => _listener?.Dispose());
+        Step("settings", () => _settings?.Dispose());   // writes anything still pending
+        Step("tray", () => _tray?.Dispose());
+
+        _window.AllowClose = true;
+        Log.CloseAndFlush();
+        Shutdown();
+    }
+
+    private static void Step(string what, Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { Log.Error(ex, "Shutdown step failed: {What}", what); }
+    }
+
+    private static async Task StepAsync(string what, Func<Task> action)
+    {
+        try { await action(); }
+        catch (Exception ex) { Log.Error(ex, "Shutdown step failed: {What}", what); }
     }
 }

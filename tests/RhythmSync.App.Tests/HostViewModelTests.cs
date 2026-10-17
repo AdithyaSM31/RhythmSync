@@ -1,0 +1,525 @@
+using System.Net;
+using RhythmSync.App.ViewModels;
+using RhythmSync.Core.Clock;
+using RhythmSync.Core.Config;
+using RhythmSync.Core.Host;
+using RhythmSync.Core.Protocol;
+using RhythmSync.Platform.Windows;
+
+namespace RhythmSync.App.Tests;
+
+public class HostViewModelTests
+{
+    private static readonly Guid IdA = Guid.Parse("00000000-0000-0000-0000-00000000000a");
+    private static readonly Guid IdB = Guid.Parse("00000000-0000-0000-0000-00000000000b");
+
+    private sealed class FakeHost : IHostControl
+    {
+        public readonly List<int> Latencies = new();
+        public readonly List<(Guid Id, float Volume, double Offset)> Settings = new();
+        public Exception? Throw;
+
+        public Task SetLatencyAsync(int ms)
+        {
+            Latencies.Add(ms);
+            return Throw is null ? Task.CompletedTask : Task.FromException(Throw);
+        }
+
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
+        {
+            Settings.Add((deviceId, volume, offsetMs));
+            if (Throw is not null) throw Throw;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class Rig
+    {
+        public readonly FakeHost Host = new();
+        public HostAudioStatus Status = HostAudioStatus.Ok;
+        public readonly Dictionary<Guid, DeviceSettings> Stored = new();
+        public readonly List<(Guid Id, DeviceSettings Settings)> Saved = new();
+        public int SoundSettingsOpened;
+        public HostViewModel Vm = null!;
+
+        public Rig(string code = "4729", string name = "Living room", int latency = 200)
+        {
+            Vm = new HostViewModel(Host, () => Status, id => Stored.TryGetValue(id, out var s) ? s : null,
+                (id, s) => Saved.Add((id, s)), code, name, latency, () => SoundSettingsOpened++);
+        }
+    }
+
+    private static ConnectedClient Client(Guid id, string name = "Kitchen", bool ready = true, HeartbeatStats? stats = null,
+        float volume = 1f, double offset = 0)
+        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), ready, stats, volume, offset);
+
+    private static HeartbeatStats Stats(double late = 0, double loss = 0, double syncError = 0.3, double drift = 12,
+        double fit = 0.05, SyncState state = SyncState.InSync)
+        => new(loss, late, drift, fit, syncError, state);
+
+    // ---- audio banner ------------------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(HostAudioStatus.Ok, null)]
+    [InlineData(HostAudioStatus.VbCableMissing, "VB-CABLE not found – this PC will only send audio. Mute its speakers or install VB-CABLE.")]
+    [InlineData(HostAudioStatus.VbCableNotDefault, "Set 'CABLE Input' as the default playback device so this PC plays in sync.")]
+    [InlineData(HostAudioStatus.LocalSpeakerIsCaptured, "Pick real speakers for local playback – not CABLE Input.")]
+    public void Each_audio_status_has_its_exact_banner(HostAudioStatus status, string? banner)
+    {
+        var rig = new Rig { Status = status };
+        rig.Vm.RefreshAudioStatus();
+
+        Assert.Equal(banner, rig.Vm.AudioBanner);
+        Assert.Equal(banner is not null, rig.Vm.HasAudioBanner);
+        Assert.Equal(status, rig.Vm.AudioStatus);
+    }
+
+    [Fact]
+    public void Banner_is_read_from_the_status_func_at_construction()
+    {
+        var host = new FakeHost();
+        var vm = new HostViewModel(host, () => HostAudioStatus.VbCableNotDefault, _ => null, (_, _) => { });
+        Assert.Equal(HostViewModel.VbCableNotDefaultBanner, vm.AudioBanner);
+    }
+
+    [Fact]
+    public void Refresh_updates_banner()
+    {
+        var rig = new Rig();
+        Assert.Null(rig.Vm.AudioBanner);
+
+        var changed = new List<string?>();
+        rig.Vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        rig.Status = HostAudioStatus.VbCableNotDefault;
+        rig.Vm.RefreshAudioStatus();
+
+        Assert.Equal("Set 'CABLE Input' as the default playback device so this PC plays in sync.", rig.Vm.AudioBanner);
+        Assert.Contains(nameof(HostViewModel.AudioBanner), changed);
+    }
+
+    [Fact]
+    public void A_throwing_status_func_keeps_the_previous_banner()
+    {
+        bool fail = false;
+        var vm = new HostViewModel(new FakeHost(), () => fail ? throw new InvalidOperationException("COM") : HostAudioStatus.VbCableMissing,
+            _ => null, (_, _) => { });
+        fail = true;
+
+        vm.RefreshAudioStatus();
+
+        Assert.Equal(HostViewModel.VbCableMissingBanner, vm.AudioBanner);
+    }
+
+    [Fact]
+    public void Open_sound_settings_command_invokes_the_opener()
+    {
+        var rig = new Rig();
+        rig.Vm.OpenSoundSettingsCommand.Execute(null);
+        Assert.Equal(1, rig.SoundSettingsOpened);
+    }
+
+    // ---- latency and session name ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Latency_change_is_sent()
+    {
+        var rig = new Rig();
+        rig.Vm.LatencyMs = 300;
+        await Task.Yield();
+
+        Assert.Equal(new[] { 300 }, rig.Host.Latencies);
+        Assert.Equal(300, rig.Vm.LatencyMs);
+    }
+
+    [Theory]
+    [InlineData(50, 100)]
+    [InlineData(900, 500)]
+    [InlineData(237, 240)]
+    [InlineData(100, 100)]
+    public void Latency_is_clamped_to_100_to_500_in_steps_of_10(int requested, int expected)
+    {
+        var rig = new Rig(latency: 200);
+        rig.Vm.LatencyMs = requested;
+        Assert.Equal(expected, rig.Vm.LatencyMs);
+    }
+
+    [Fact]
+    public void Setting_the_same_latency_sends_nothing_and_construction_sends_nothing()
+    {
+        var rig = new Rig(latency: 200);
+        rig.Vm.LatencyMs = 200;
+        rig.Vm.LatencyMs = 204;   // rounds to the current value
+
+        Assert.Empty(rig.Host.Latencies);
+    }
+
+    [Fact]
+    public void Latency_change_is_reported_for_persistence_with_the_normalized_value()
+    {
+        var rig = new Rig();
+        var reported = new List<int>();
+        rig.Vm.LatencyChanged += reported.Add;
+
+        rig.Vm.LatencyMs = 333;
+
+        Assert.Equal(new[] { 330 }, reported);
+    }
+
+    [Fact]
+    public void A_failing_latency_send_does_not_throw_into_the_ui()
+    {
+        var rig = new Rig();
+        rig.Host.Throw = new InvalidOperationException("host gone");
+        rig.Vm.LatencyMs = 300;
+        Assert.Equal(300, rig.Vm.LatencyMs);
+    }
+
+    [Fact]
+    public void Initial_values_are_exposed()
+    {
+        var rig = new Rig("1234", "Den", 250);
+        Assert.Equal("1234", rig.Vm.PairingCode);
+        Assert.Equal("Den", rig.Vm.SessionName);
+        Assert.Equal(250, rig.Vm.LatencyMs);
+        Assert.False(rig.Vm.ShowStats);
+    }
+
+    [Fact]
+    public void Session_name_can_be_changed_and_read()
+    {
+        var rig = new Rig();
+        rig.Vm.SessionName = "Patio";
+        Assert.Equal("Patio", rig.Vm.SessionName);
+    }
+
+    [Fact]
+    public void Show_stats_toggles()
+    {
+        var rig = new Rig();
+        rig.Vm.ShowStats = true;
+        Assert.True(rig.Vm.ShowStats);
+    }
+
+    // ---- client rows -------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void UpdateClients_adds_updates_and_removes_rows()
+    {
+        var rig = new Rig();
+
+        rig.Vm.UpdateClients(new[] { Client(IdA, "Kitchen"), Client(IdB, "Bedroom") });
+        Assert.Equal(new[] { IdA, IdB }, rig.Vm.Clients.Select(c => c.DeviceId));
+
+        var rowA = rig.Vm.Clients[0];
+        rig.Vm.UpdateClients(new[] { Client(IdA, "Kitchen PC", stats: Stats(syncError: 0.8)), Client(IdB, "Bedroom") });
+        Assert.Same(rowA, rig.Vm.Clients[0]);   // updated in place, not replaced
+        Assert.Equal("Kitchen PC", rowA.Name);
+        Assert.Equal(0.8, rowA.SyncErrorMs);
+        Assert.Equal(SyncState.InSync, rowA.State);
+
+        rig.Vm.UpdateClients(new[] { Client(IdB, "Bedroom") });
+        Assert.Equal(new[] { IdB }, rig.Vm.Clients.Select(c => c.DeviceId));
+
+        rig.Vm.UpdateClients(Array.Empty<ConnectedClient>());
+        Assert.Empty(rig.Vm.Clients);
+    }
+
+    [Fact]
+    public void Row_state_without_stats_is_connecting_until_ready_then_syncing()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, ready: false) });
+        Assert.Equal(SyncState.Connecting, rig.Vm.Clients[0].State);
+        Assert.True(double.IsNaN(rig.Vm.Clients[0].SyncErrorMs));
+
+        rig.Vm.UpdateClients(new[] { Client(IdA, ready: true) });
+        Assert.Equal(SyncState.Syncing, rig.Vm.Clients[0].State);
+    }
+
+    [Fact]
+    public void Row_exposes_the_heartbeat_stats()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(late: 1.5, loss: 0.25, syncError: 0.4, drift: -30, fit: 0.07, state: SyncState.Degraded)) });
+
+        var row = rig.Vm.Clients[0];
+        Assert.Equal(1.5, row.LatePct);
+        Assert.Equal(0.25, row.LossPct);
+        Assert.Equal(0.4, row.SyncErrorMs);
+        Assert.Equal(-30, row.DriftPpm);
+        Assert.Equal(0.07, row.FitResidualMs);
+        Assert.Equal(SyncState.Degraded, row.State);
+    }
+
+    [Fact]
+    public void Duplicate_device_ids_in_a_snapshot_do_not_throw_or_duplicate_rows()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, "one"), Client(IdA, "two") });
+        Assert.Single(rig.Vm.Clients);
+    }
+
+    // ---- congestion --------------------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(6.0, true)]
+    [InlineData(5.01, true)]
+    [InlineData(5.0, false)]
+    [InlineData(0.0, false)]
+    [InlineData(double.NaN, false)]
+    public void Congested_when_late_over_5_percent(double late, bool congested)
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(late: late)) });
+
+        var row = rig.Vm.Clients[0];
+        Assert.Equal(congested, row.Congested);
+        Assert.Equal(congested ? "Wi-Fi congested – try higher latency" : "", row.CongestedText);
+    }
+
+    [Fact]
+    public void Congested_is_false_without_stats()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        Assert.False(rig.Vm.Clients[0].Congested);
+    }
+
+    [Fact]
+    public void NaN_stats_display_as_a_dash()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(late: double.NaN, loss: double.NaN, syncError: double.NaN, drift: double.NaN, fit: double.NaN)) });
+
+        var row = rig.Vm.Clients[0];
+        Assert.Equal("—", row.LossText);
+        Assert.Equal("—", row.LateText);
+        Assert.Equal("—", row.SyncErrorText);
+        Assert.Equal("—", row.DriftText);
+        Assert.Equal("—", row.FitResidualText);
+        Assert.DoesNotContain("NaN", row.SyncErrorText + row.LossText + row.LateText + row.DriftText + row.FitResidualText);
+    }
+
+    [Fact]
+    public void Missing_stats_display_as_a_dash()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        Assert.Equal("—", rig.Vm.Clients[0].SyncErrorText);
+        Assert.Equal("—", rig.Vm.Clients[0].LossText);
+    }
+
+    [Fact]
+    public void Finite_stats_are_formatted_with_units()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(late: 1.234, loss: 0.5, syncError: 0.4567, drift: 12.4, fit: 0.071)) });
+
+        var row = rig.Vm.Clients[0];
+        Assert.Equal("0.46 ms", row.SyncErrorText);
+        Assert.Equal("0.5 %", row.LossText);
+        Assert.Equal("1.2 %", row.LateText);
+        Assert.Equal("12 ppm", row.DriftText);
+        Assert.Equal("0.07 ms", row.FitResidualText);
+    }
+
+    // ---- per-client settings -----------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Row_offset_change_is_sent()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        await Task.Yield();
+
+        rig.Vm.Clients[0].OffsetMs = 12.5;
+
+        Assert.Equal((IdA, 1f, 12.5), Assert.Single(rig.Host.Settings));
+    }
+
+    [Fact]
+    public async Task Row_volume_change_sends_the_current_offset_too()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, offset: -5) });
+        await Task.Yield();
+
+        rig.Vm.Clients[0].Volume = 0.4f;
+
+        Assert.Equal((IdA, 0.4f, -5.0), Assert.Single(rig.Host.Settings));
+    }
+
+    [Fact]
+    public async Task New_client_gets_stored_settings()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(0.7f, -5);
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        await Task.Yield();
+
+        Assert.Equal((IdA, 0.7f, -5.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal(0.7f, rig.Vm.Clients[0].Volume);
+        Assert.Equal(-5, rig.Vm.Clients[0].OffsetMs);
+        Assert.Empty(rig.Saved);   // restoring a stored value is not a user change
+    }
+
+    [Fact]
+    public void Stored_settings_are_sent_once_not_on_every_update()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(0.7f, -5);
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.7f, offset: -5) });
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.7f, offset: -5) });
+
+        Assert.Single(rig.Host.Settings);
+    }
+
+    [Fact]
+    public void A_client_that_leaves_and_returns_gets_its_stored_settings_again()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(0.7f, -5);
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        rig.Vm.UpdateClients(Array.Empty<ConnectedClient>());
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+
+        Assert.Equal(2, rig.Host.Settings.Count);
+    }
+
+    [Fact]
+    public void New_client_without_stored_settings_sends_nothing_and_shows_the_hosts_values()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.6f, offset: 3) });
+
+        Assert.Empty(rig.Host.Settings);
+        Assert.Equal(0.6f, rig.Vm.Clients[0].Volume);
+        Assert.Equal(3, rig.Vm.Clients[0].OffsetMs);
+    }
+
+    [Fact]
+    public void Row_change_is_saved()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, offset: 8) });
+
+        rig.Vm.Clients[0].Volume = 0.3f;
+
+        var (id, settings) = Assert.Single(rig.Saved);
+        Assert.Equal(IdA, id);
+        Assert.Equal(new DeviceSettings(0.3f, 8), settings);
+    }
+
+    [Fact]
+    public void A_snapshot_that_lost_the_row_values_after_a_reconnect_gets_them_pushed_again_without_saving()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        rig.Vm.Clients[0].Volume = 0.25f;
+        rig.Vm.Clients[0].OffsetMs = 40;
+        rig.Host.Settings.Clear();
+        rig.Saved.Clear();
+
+        // The client reconnected: the host-side values are back at volume 1, offset 0.
+        rig.Vm.UpdateClients(new[] { Client(IdA, ready: false) });
+
+        Assert.Equal((IdA, 0.25f, 40.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal(0.25f, rig.Vm.Clients[0].Volume);
+        Assert.Equal(40, rig.Vm.Clients[0].OffsetMs);
+        Assert.Empty(rig.Saved);
+
+        // Once the host reports the same values nothing more is sent.
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.25f, offset: 40) });
+        Assert.Single(rig.Host.Settings);
+    }
+
+    [Fact]
+    public void Row_values_are_clamped_before_reaching_the_host()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        var row = rig.Vm.Clients[0];
+
+        row.Volume = 7f;
+        row.OffsetMs = -500;
+        row.Volume = -1f;
+        row.OffsetMs = 500;
+
+        Assert.All(rig.Host.Settings, s =>
+        {
+            Assert.InRange(s.Volume, 0f, 1f);
+            Assert.InRange(s.Offset, -100.0, 100.0);
+        });
+        Assert.Equal(0f, row.Volume);
+        Assert.Equal(100, row.OffsetMs);
+    }
+
+    [Fact]
+    public void NaN_and_infinity_never_reach_the_host()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        var row = rig.Vm.Clients[0];
+
+        row.Volume = float.NaN;
+        row.OffsetMs = double.NaN;
+        row.Volume = float.PositiveInfinity;   // clamps to 1 (already 1)
+        row.OffsetMs = double.NegativeInfinity;   // clamps to -100
+
+        Assert.All(rig.Host.Settings, s =>
+        {
+            Assert.True(float.IsFinite(s.Volume));
+            Assert.True(double.IsFinite(s.Offset));
+        });
+        Assert.Equal(1f, row.Volume);
+        Assert.Equal(-100, row.OffsetMs);
+    }
+
+    [Fact]
+    public void A_throwing_host_or_save_does_not_throw_into_the_ui()
+    {
+        var host = new FakeHost { Throw = new InvalidOperationException("gone") };
+        var vm = new HostViewModel(host, () => HostAudioStatus.Ok, _ => null, (_, _) => throw new IOException("disk"));
+        vm.UpdateClients(new[] { Client(IdA) });
+
+        vm.Clients[0].Volume = 0.5f;
+
+        Assert.Equal(0.5f, vm.Clients[0].Volume);
+    }
+
+    [Fact]
+    public void A_throwing_stored_settings_lookup_still_adds_the_row()
+    {
+        var vm = new HostViewModel(new FakeHost(), () => HostAudioStatus.Ok, _ => throw new IOException("disk"), (_, _) => { });
+        vm.UpdateClients(new[] { Client(IdA) });
+        Assert.Single(vm.Clients);
+    }
+
+    [Fact]
+    public void Row_texts_show_percent_and_signed_offset()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.5f, offset: 12.4) });
+
+        var row = rig.Vm.Clients[0];
+        Assert.Equal("Volume: 50%", row.VolumeText);
+        Assert.Equal("Offset: +12 ms", row.OffsetText);
+    }
+
+    [Theory]
+    [InlineData(SyncState.Connecting, "Connecting…")]
+    [InlineData(SyncState.Syncing, "Syncing…")]
+    [InlineData(SyncState.InSync, "In sync")]
+    [InlineData(SyncState.Degraded, "Sync is degraded")]
+    [InlineData(SyncState.Disconnected, "Not connected")]
+    public void Row_status_text_follows_the_clients_reported_state(SyncState state, string text)
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(state: state)) });
+        Assert.Equal(text, rig.Vm.Clients[0].StatusText);
+    }
+}
