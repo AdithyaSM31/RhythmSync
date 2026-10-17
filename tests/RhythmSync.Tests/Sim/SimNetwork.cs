@@ -120,7 +120,7 @@ public sealed class SimNetwork : IDatagramChannelFactory
         public void Send(ReadOnlySpan<byte> datagram, IPEndPoint to)
         {
             ArgumentNullException.ThrowIfNull(to);
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_disposed) return;   // IDatagramChannel: Send never throws for network-level failures, including after Dispose
             _network.Send(this, datagram, to);
         }
 

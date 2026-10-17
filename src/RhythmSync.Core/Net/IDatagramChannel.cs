@@ -8,7 +8,12 @@ namespace RhythmSync.Core.Net;
 /// </summary>
 public delegate void DatagramHandler(ReadOnlySpan<byte> data, IPEndPoint from);
 
-/// <summary>A bound UDP-like endpoint. Disposing it stops delivery to the handler.</summary>
+/// <summary>
+/// A bound UDP-like endpoint. Disposing it stops delivery to the handler. Two guarantees callers rely on: the handler
+/// is called serially (never concurrently with itself, always from the same receive thread), so handlers may reuse
+/// scratch buffers; and <see cref="Send"/> does not throw for network errors (unreachable or down destination,
+/// transient socket failure, send after <see cref="IDisposable.Dispose"/>): the datagram is simply lost, as on any UDP path.
+/// </summary>
 public interface IDatagramChannel : IDisposable
 {
     IPEndPoint LocalEndPoint { get; }
