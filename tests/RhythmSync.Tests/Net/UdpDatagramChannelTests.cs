@@ -96,6 +96,28 @@ public class UdpDatagramChannelTests
     }
 
     [Fact]
+    public void Send_does_not_allocate_after_the_first_send_to_a_destination()
+    {
+        using var a = new UdpDatagramChannel(AnyLoopback);
+        using var b = new UdpDatagramChannel(AnyLoopback);
+        b.Start((_, _) => { });
+        var payload = new byte[982];
+        var to = b.LocalEndPoint;
+        for (int i = 0; i < 100; i++) a.Send(payload, to);   // warm up: caches the address, JITs the path
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++)
+        {
+            a.Send(payload, to);
+            if (i % 50 == 0) Thread.Sleep(1);                 // let the receiver drain
+        }
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(0, a.SendErrors);
+    }
+
+    [Fact]
     public void Send_after_Dispose_does_not_throw_and_Dispose_twice_is_fine()
     {
         var a = new UdpDatagramChannel(AnyLoopback);

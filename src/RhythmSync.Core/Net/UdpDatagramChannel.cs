@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 
@@ -5,7 +6,8 @@ namespace RhythmSync.Core.Net;
 
 /// <summary>
 /// <see cref="IDatagramChannel"/> over a real UDP socket. One dedicated receive thread reads into a 2048-byte buffer and
-/// calls the handler serially with a span of exactly the received length. <see cref="Send"/> never throws for socket
+/// calls the handler serially with a span of exactly the received length. <see cref="Send"/> does not allocate once a
+/// destination has been sent to (its socket address is cached, up to 32 destinations) and never throws for socket
 /// errors (they are counted in <see cref="SendErrors"/>); socket errors on receive are counted in
 /// <see cref="ReceiveErrors"/> and the loop continues. On Windows <c>SIO_UDP_CONNRESET</c> is disabled so an ICMP
 /// port-unreachable caused by a send does not surface as an error on the receive path. Exceptions thrown by the
@@ -19,7 +21,11 @@ public sealed class UdpDatagramChannel : IDatagramChannel
     private const int JoinTimeoutMs = 2000;
     private const int ErrorBackoffMs = 1;               // keeps a persistently failing socket from spinning a core
 
+    /// <summary>Destinations whose <see cref="SocketAddress"/> is cached; further ones are sent uncached (allocating).</summary>
+    private const int MaxCachedDestinations = 32;
+
     private readonly Socket _socket;
+    private readonly ConcurrentDictionary<IPEndPoint, SocketAddress> _destinations = new();
     private readonly Thread _thread;
     private readonly object _startGate = new();
     private DatagramHandler? _handler;
@@ -69,12 +75,26 @@ public sealed class UdpDatagramChannel : IDatagramChannel
 
         try
         {
-            _socket.SendTo(datagram, SocketFlags.None, to);
+            _socket.SendTo(datagram, SocketFlags.None, AddressOf(to));
         }
         catch (Exception e) when (e is SocketException or ObjectDisposedException)
         {
             Interlocked.Increment(ref _sendErrors);
         }
+    }
+
+    /// <summary>
+    /// The serialized address for <paramref name="to"/>, built on the first send to each destination so that later sends
+    /// (the audio path: one per client per frame) do not allocate. A <see cref="SocketAddress"/> is read-only while sending
+    /// and safe to share between threads. The key is a private copy because <see cref="IPEndPoint"/> is mutable.
+    /// </summary>
+    private SocketAddress AddressOf(IPEndPoint to)
+    {
+        if (_destinations.TryGetValue(to, out var cached)) return cached;
+        var address = to.Serialize();
+        if (_destinations.Count < MaxCachedDestinations)
+            _destinations.TryAdd(new IPEndPoint(to.Address, to.Port), address);
+        return address;
     }
 
     public void Start(DatagramHandler handler)
