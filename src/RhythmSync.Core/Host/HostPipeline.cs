@@ -23,12 +23,16 @@ public sealed class HostPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(sessionClock);
 
         _audio = audio;
+        SessionId = sessionId;
         _timestamper = new CaptureTimestamper(captureSampleRate);
         Streamer = new Streamer(audio, sessionId);
         Assembler = new FrameAssembler(captureSampleRate, _timestamper, Streamer, targetLatencyMs);
         _clockServer = new ClockSyncServer(clock, sessionClock, sessionId);
         _clockServer.Start();
     }
+
+    /// <summary>The session id stamped on every audio packet and answered by the clock server.</summary>
+    public uint SessionId { get; }
 
     public Streamer Streamer { get; }
 
