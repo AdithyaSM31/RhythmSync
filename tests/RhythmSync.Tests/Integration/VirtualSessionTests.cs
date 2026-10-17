@@ -20,7 +20,8 @@ public class VirtualSessionTests
     private const long Ms = Second / 1000;
     private const uint SessionId = 0x5E55_0010;
     private const int TargetLatencyMs = 200;
-    private const double MaxPairErrorSamples = 48;   // 1 ms at 48 kHz
+    private const double MaxErrorSamples = 48;       // 1 ms at 48 kHz
+    private const double MinCoverage = 0.99;         // share of measured grid points that must be audible
 
     private static readonly long RunEnd = 600 * Second;
     private static readonly long OutageStart = 300 * Second, OutageEnd = 302 * Second;
@@ -35,7 +36,8 @@ public class VirtualSessionTests
 
     public VirtualSessionTests(ITestOutputHelper log) => _log = log;
 
-    private sealed record RemoteSpec(string Name, long ClockOffsetTicks, double ClockDriftPpm, int DeviceRate, double DeviceDriftPpm);
+    private sealed record RemoteSpec(string Name, long ClockOffsetTicks, double ClockDriftPpm, int DeviceRate, double DeviceDriftPpm,
+                                     int PeriodFrames);
 
     /// <summary>One speaker: its clock, pipeline and device; <c>Estimator</c> is null for the host's own output.</summary>
     private sealed record Output(string Name, DriftingClock Clock, ClientPipeline Pipeline, FakeOutput Device, ClockEstimator? Estimator);
@@ -60,9 +62,10 @@ public class VirtualSessionTests
 
         RemoteSpec[] remotes =
         [
-            new("A", 4 * Second, +100, 48000, +50),
-            new("B", -9 * Second, -80, 44100, -100),
-            new("C", 30 * 60 * Second, +40, 48000, 0),
+            // Device periods differ (10.7 / 20 / 10 ms) so that a mishandled write-ahead cannot cancel between outputs.
+            new("A", 4 * Second, +100, 48000, +50, 512),
+            new("B", -9 * Second, -80, 44100, -100, 882),
+            new("C", 30 * 60 * Second, +40, 48000, 0, 480),
         ];
         for (int i = 0; i < remotes.Length; i++)
         {
@@ -81,7 +84,7 @@ public class VirtualSessionTests
             sync.Start();
             Repeat(sim, 10 * Ms, sync.Tick);
 
-            outputs.Add(new Output(r.Name, clientClock, pipeline, new FakeOutput(sim, clientClock, r.DeviceRate, r.DeviceDriftPpm, r.DeviceRate / 100), estimator));
+            outputs.Add(new Output(r.Name, clientClock, pipeline, new FakeOutput(sim, clientClock, r.DeviceRate, r.DeviceDriftPpm, r.PeriodFrames), estimator));
         }
 
         foreach (var o in outputs)
@@ -91,7 +94,9 @@ public class VirtualSessionTests
             o.Device.Start(o.Pipeline.Scheduler);
         }
 
-        var capture = new FakeCapture(sim, new DriftingClock(sim, 0, +30), hostClock, 48000, host.OnCaptured);
+        const int CaptureRate = 48000;
+        var captureClock = new DriftingClock(sim, 0, +30);
+        var capture = new FakeCapture(sim, captureClock, hostClock, CaptureRate, host.OnCaptured);
         capture.Start();
 
         // Once a second: record sync-state and resync transitions for the diagnostics.
@@ -140,24 +145,40 @@ public class VirtualSessionTests
         }
 
         var series = outputs.Select(o => Resample(o.Device.Heard)).ToArray();
+        int expectedPoints = Enumerable.Range(0, series[0].Length).Count(p => IsMeasured(p));
         var failures = new List<string>();
+
+        void Check(string label, double[] errors)
+        {
+            if (errors.Length < MinCoverage * expectedPoints)
+                failures.Add($"{label}: only {errors.Length} of {expectedPoints} grid points comparable");
+            if (errors.Length == 0)
+            {
+                report.AppendLine($"{label}: no comparable points");
+                return;
+            }
+            double p50 = Percentile(errors, 0.50), p99 = Percentile(errors, 0.99), max = errors[^1];
+            report.AppendLine($"{label}: n {errors.Length}/{expectedPoints}, |Δpos| p50 {p50 / 48:F3} ms, p99 {p99 / 48:F3} ms, max {max / 48:F3} ms");
+            if (p99 > MaxErrorSamples) failures.Add($"{label}: p99 {p99:F1} samples > {MaxErrorSamples}");
+        }
+
+        // Absolute: the stream position whose audio the capture device recorded at true time t − target latency
+        // (FrameAssembler: stream sample k ↔ device position origin + k · captureRate / 48000, origin = position 0).
+        double[] truth = new double[series[0].Length];
+        for (int p = 0; p < truth.Length; p++)
+            truth[p] = capture.DevicePositionAt(GridTime(p) - TargetLatencyMs * Ms) * AudioFormat.SampleRate / CaptureRate;
         for (int i = 0; i < outputs.Count; i++)
         {
-            for (int j = i + 1; j < outputs.Count; j++)
-            {
-                var errors = PairErrors(series[i], series[j]);
-                string pair = $"{outputs[i].Name}–{outputs[j].Name}";
-                if (errors.Length == 0)
-                {
-                    failures.Add($"{pair}: no comparable points");
-                    report.AppendLine($"{pair}: no comparable points");
-                    continue;
-                }
-                double p50 = Percentile(errors, 0.50), p99 = Percentile(errors, 0.99), max = errors[^1];
-                report.AppendLine($"{pair}: n {errors.Length}, |Δpos| p50 {p50 / 48:F3} ms, p99 {p99 / 48:F3} ms, max {max / 48:F3} ms");
-                if (p99 > MaxPairErrorSamples) failures.Add($"{pair}: p99 {p99:F1} samples > {MaxPairErrorSamples}");
-            }
+            int silent = Enumerable.Range(0, series[i].Length).Count(p => IsMeasured(p) && double.IsNaN(series[i][p]));
+            report.AppendLine($"{outputs[i].Name}: {silent} silent grid points");
+            Check($"{outputs[i].Name} vs truth", Errors(series[i], truth));
         }
+
+        // Pairwise.
+        for (int i = 0; i < outputs.Count; i++)
+            for (int j = i + 1; j < outputs.Count; j++)
+                Check($"{outputs[i].Name}–{outputs[j].Name}", Errors(series[i], series[j]));
+
         report.AppendLine("timeline:").Append(timeline);
         _log.WriteLine(report.ToString());
 
@@ -195,7 +216,7 @@ public class VirtualSessionTests
         int k = 0;
         for (int p = 0; p < points; p++)
         {
-            long t = MeasureFrom + p * Grid;
+            long t = GridTime(p);
             while (k + 1 < heard.Count && heard[k + 1].TrueTicksHeard <= t) k++;
             if (k + 1 >= heard.Count || heard[k].TrueTicksHeard > t)
             {
@@ -209,15 +230,18 @@ public class VirtualSessionTests
         return result;
     }
 
-    /// <summary>Sorted |Δpos| (stream samples) over grid points outside the excluded window where both are defined.</summary>
-    private static double[] PairErrors(double[] a, double[] b)
+    private static long GridTime(int p) => MeasureFrom + p * Grid;
+
+    /// <summary>Grid point <paramref name="p"/> lies outside the excluded outage window.</summary>
+    private static bool IsMeasured(int p) => GridTime(p) < ExcludeFrom || GridTime(p) > ExcludeTo;
+
+    /// <summary>Sorted |Δpos| (stream samples) over measured grid points where both are defined.</summary>
+    private static double[] Errors(double[] a, double[] b)
     {
         var errors = new List<double>(a.Length);
         for (int p = 0; p < a.Length; p++)
         {
-            long t = MeasureFrom + p * Grid;
-            if (t >= ExcludeFrom && t <= ExcludeTo) continue;
-            if (double.IsNaN(a[p]) || double.IsNaN(b[p])) continue;
+            if (!IsMeasured(p) || double.IsNaN(a[p]) || double.IsNaN(b[p])) continue;
             errors.Add(Math.Abs(a[p] - b[p]));
         }
         errors.Sort();

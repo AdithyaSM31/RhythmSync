@@ -44,6 +44,13 @@ public sealed class FakeCapture
     /// <summary>Device position of the next frame to be delivered (frames delivered so far).</summary>
     public long Position => _position;
 
+    /// <summary>
+    /// Ground truth: the (fractional) device position captured at true time <paramref name="trueTicks"/>, from this
+    /// device's clock and its position origin at <see cref="Start"/>.
+    /// </summary>
+    public double DevicePositionAt(long trueTicks) =>
+        (_deviceClock.ToClock(trueTicks) - _startDeviceTicks) * (double)_rate / AudioFormat.TicksPerSecond;
+
     /// <summary>Starts capturing now at device position 0; the first chunk is delivered 10 ms of device time later.</summary>
     public void Start()
     {
