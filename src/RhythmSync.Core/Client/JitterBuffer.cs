@@ -102,6 +102,16 @@ public sealed class JitterBuffer
         }
     }
 
+    /// <summary>True if frame <paramref name="seq"/> is stored and not yet consumed.</summary>
+    public bool Contains(uint seq)
+    {
+        lock (_gate)
+        {
+            int slot = (int)(seq % (uint)_capacity);
+            return _present[slot] && _seq[slot] == seq;
+        }
+    }
+
     /// <summary>Frees every frame with sequence number up to and including <paramref name="seq"/> and remembers the last one's play time.</summary>
     public void MarkConsumedThrough(uint seq)
     {
@@ -132,8 +142,10 @@ public sealed class JitterBuffer
     /// <summary>
     /// Maps a host time to a (fractional) stream sample position. Uses the latest reference frame whose play time
     /// is at or before <paramref name="hostTicks"/>, interpolating to the next present frame or extrapolating at the
-    /// nominal rate; before every reference it extrapolates backward from the earliest. False only if no frame
-    /// has ever been seen.
+    /// nominal rate; before every reference it extrapolates backward from the earliest. If the next present frame's
+    /// play time is more than one frame later than nominal spacing implies (a latency jump), the gap is a
+    /// discontinuity: the position advances at the nominal rate and then holds at the next frame's start until it
+    /// is due, so the mapping never decreases. False only if no frame has ever been seen.
     /// </summary>
     public bool TryMapHostTimeToPosition(long hostTicks, out double streamSample)
     {
@@ -168,7 +180,12 @@ public sealed class JitterBuffer
                 if (!hasG || _seq[i] < gSeq) { hasG = true; gSeq = _seq[i]; gPlayAt = _playAt[i]; }
             }
 
-            if (hasG && gPlayAt > fPlayAt)
+            if (hasG && gPlayAt - fPlayAt > ((long)gSeq - fSeq) * AudioFormat.FrameTicks + AudioFormat.FrameTicks)
+            {
+                // playAt jumped (host latency change): play f on at the nominal rate, then hold at g's start until g is due.
+                streamSample = Math.Min(Extrapolate(fSeq, fPlayAt, hostTicks), (long)gSeq * AudioFormat.FrameSamples);
+            }
+            else if (hasG && gPlayAt > fPlayAt)
             {
                 double fraction = (double)(hostTicks - fPlayAt) / (gPlayAt - fPlayAt);
                 streamSample = (long)fSeq * AudioFormat.FrameSamples

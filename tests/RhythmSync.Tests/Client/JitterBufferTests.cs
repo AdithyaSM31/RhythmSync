@@ -209,6 +209,43 @@ public class JitterBufferTests
     }
 
     [Fact]
+    public void Contains_reports_present_frames_only()
+    {
+        var b = new JitterBuffer(16);
+        Assert.False(b.Contains(0));
+        Assert.True(Put(b, 3));
+        Assert.True(b.Contains(3));
+        Assert.False(b.Contains(2));
+        Assert.False(b.Contains(3 + 16));   // same slot, different seq
+        b.MarkConsumedThrough(3);
+        Assert.False(b.Contains(3));
+    }
+
+    [Fact]
+    public void PlayAt_jump_is_a_discontinuity_played_nominally_then_held()
+    {
+        const long jump = 1_000_000;
+        var b = new JitterBuffer();
+        for (uint s = 0; s < 100; s++) Assert.True(Put(b, s));
+        for (uint s = 100; s <= 120; s++) Assert.True(b.Insert(s, PlayAt(s) + jump, Frame(s)));
+
+        Assert.True(b.TryMapHostTimeToPosition(PlayAt(99) + 25_000, out double inFrame));
+        Assert.Equal(99 * 240 + 120.0, inFrame, 1e-6);
+        Assert.True(b.TryMapHostTimeToPosition(PlayAt(99) + 500_000, out double held));
+        Assert.Equal(100 * 240.0, held, 1e-6);
+
+        double previous = double.NegativeInfinity;
+        for (long t = PlayAt(98); t <= PlayAt(102) + jump; t += 10_000)
+        {
+            Assert.True(b.TryMapHostTimeToPosition(t, out double pos));
+            Assert.True(pos >= previous, $"mapping decreased at t={t}: {previous} -> {pos}");
+            previous = pos;
+        }
+        Assert.True(b.TryMapHostTimeToPosition(PlayAt(101) + jump, out double after));
+        Assert.Equal(101 * 240.0, after, 1e-6);
+    }
+
+    [Fact]
     public async Task Concurrent_insert_and_read_does_not_corrupt()
     {
         var b = new JitterBuffer(64);
