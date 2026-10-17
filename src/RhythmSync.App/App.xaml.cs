@@ -84,7 +84,9 @@ public partial class App : Application
 
         StartListener(client, clock);
 
-        _ticker = new SessionTicker(_session.Tick, _listener is null ? null : _listener.Tick);
+        // 10 ms ticks and 1 ms timer resolution only while a session is active; ~100 ms when disconnected.
+        _ticker = new SessionTicker(_session.Tick, _listener is null ? null : _listener.Tick,
+            isActive: () => adapter.State != SyncState.Disconnected);
 
         _window = new MainWindow { DataContext = _main };
         _tray = new TrayIcon(_window.ToggleVisibility, Quit);
