@@ -98,6 +98,9 @@ public sealed class PlaybackScheduler : IRenderCallback
 
     public double EffectiveOffsetMs => Interlocked.Read(ref _offsetTicks) / TicksPerMs;
 
+    /// <summary>The output device rate this scheduler renders at.</summary>
+    public int DeviceSampleRate => _deviceRate;
+
     public PlaybackState State => _state;
 
     /// <summary>Stream sample at the first sample of the last rendered buffer; NaN when that buffer was silence.</summary>
