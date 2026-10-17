@@ -65,6 +65,18 @@ public class HostSessionTests
             catch (IOException) { return null; }   // reset by the host counts as closed
         }
 
+        /// <summary>Asserts that no message (and no close) arrives within <paramref name="window"/>.</summary>
+        public async Task ExpectNothingAsync(TimeSpan window)
+        {
+            using var cts = new CancellationTokenSource(window);
+            try
+            {
+                var m = await ControlCodec.ReadAsync(_stream, cts.Token);
+                Assert.Fail($"Expected silence but received {(m is null ? "EOF" : m.ToString())}.");
+            }
+            catch (OperationCanceledException) { }
+        }
+
         public async Task<T> ReadAsync<T>() where T : ControlMessage
             => Assert.IsType<T>(await ReadAsync());
 
@@ -96,7 +108,7 @@ public class HostSessionTests
         public async Task<TestClient> ConnectAsync()
         {
             var c = await TestClient.ConnectAsync(Host.ControlPort);
-            _clients.Add(c);
+            lock (_clients) _clients.Add(c);
             return c;
         }
 
@@ -195,6 +207,21 @@ public class HostSessionTests
     }
 
     [Fact]
+    public async Task Parallel_bad_hellos_lock_out_after_exactly_three_guesses()
+    {
+        await using var rig = await new Rig().StartAsync();
+        var id = Guid.NewGuid();
+
+        var replies = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => rig.JoinAsync(id, code: "0000")));
+
+        // Check, compare and record are one atomic step: only three guesses get an answer, the rest are locked out.
+        Assert.Equal(3, replies.Count(r => r.Reply is Reject { Reason: RejectReason.BadCode }));
+        Assert.Equal(7, replies.Count(r => r.Reply is Reject { Reason: RejectReason.LockedOut }));
+        Assert.Equal(new Reject(RejectReason.LockedOut), (await rig.JoinAsync(id, code: "1234")).Reply);
+        Assert.Empty(rig.Host.Clients);
+    }
+
+    [Fact]
     public async Task Failures_below_the_limit_are_cleared_by_a_successful_join()
     {
         await using var rig = await new Rig().StartAsync();
@@ -282,14 +309,20 @@ public class HostSessionTests
 
         rig.Host.Tick();
         Assert.Equal(new Heartbeat(null), await client.ReadAsync());
+        rig.Host.Tick();                                  // same instant: nothing more
+        await client.ExpectNothingAsync(TimeSpan.FromMilliseconds(300));
 
         rig.Clock.Advance(TimeSpan.FromSeconds(0.5));
-        rig.Host.Tick();                                  // too soon: nothing sent
+        rig.Host.Tick();                                  // too soon
+        await client.ExpectNothingAsync(TimeSpan.FromMilliseconds(300));
+
         await client.SendAsync(new Heartbeat(null));      // keep the client alive for the next ticks
         await Task.Delay(100);
         rig.Clock.Advance(TimeSpan.FromSeconds(0.6));
-        rig.Host.Tick();
+        rig.Host.Tick();                                  // 1.1 s after the first
         Assert.Equal(new Heartbeat(null), await client.ReadAsync());
+        rig.Host.Tick();
+        await client.ExpectNothingAsync(TimeSpan.FromMilliseconds(300));
     }
 
     [Fact]

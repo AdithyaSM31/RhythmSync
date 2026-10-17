@@ -41,6 +41,7 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
     public const double MaxOffsetMs = 100;
 
     private const int MaxNameLength = 64;
+    private const int MaxCodeChars = 256;
     private const int BadCodeLimit = 3;
     private const int MaxTrackedDevices = 1024;
     private const int MaxPendingConnections = 32;
@@ -264,31 +265,42 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
     private async Task AcceptLoopAsync(TcpListener listener, CancellationTokenSource linked)
     {
         var ct = linked.Token;
+        int consecutiveFaults = 0;
         try
         {
+            // Only cancellation or disposal ends the loop; any other failure is counted and the next accept is tried.
             while (!ct.IsCancellationRequested)
             {
-                TcpClient tcp;
                 try
                 {
-                    tcp = await listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) { return; }
-                catch (ObjectDisposedException) { return; }
-                catch (SocketException)
-                {
-                    // A connection that died during accept (or a transient resource error): keep serving.
-                    try { await Task.Delay(50, ct).ConfigureAwait(false); }
+                    TcpClient tcp;
+                    try
+                    {
+                        tcp = await listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+                    }
                     catch (OperationCanceledException) { return; }
-                    continue;
-                }
+                    catch (ObjectDisposedException) { return; }
 
-                Admit(tcp);
+                    consecutiveFaults = 0;
+                    try
+                    {
+                        Admit(tcp);
+                    }
+                    catch (Exception)
+                    {
+                        Interlocked.Increment(ref _faults);
+                        try { tcp.Dispose(); } catch (Exception) { }
+                    }
+                }
+                catch (Exception e)
+                {
+                    // A connection that died during accept, or a transient resource error: back off briefly and keep serving.
+                    if (e is not SocketException) Interlocked.Increment(ref _faults);
+                    consecutiveFaults++;
+                    try { await Task.Delay(Math.Min(50 * consecutiveFaults, 1000), ct).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { return; }
+                }
             }
-        }
-        catch (Exception)
-        {
-            Interlocked.Increment(ref _faults);
         }
         finally
         {
@@ -375,14 +387,13 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
 
         if (hello.DeviceId == Guid.Empty) return false;   // nothing to attribute a bad attempt to
         if (hello.ProtocolVersion != ProtocolVersion) return await RejectAsync(c, RejectReason.VersionMismatch).ConfigureAwait(false);
-        if (IsLockedOut(hello.DeviceId, now)) return await RejectAsync(c, RejectReason.LockedOut).ConfigureAwait(false);
 
         string? name = NormalizeName(hello.DeviceName);
         bool wellFormed = name is not null && hello.PairingCode is not null && hello.AudioPort is >= 1 and <= 65535;
-        if (!wellFormed || !CodeMatches(hello.PairingCode!))
+        switch (CheckCode(hello.DeviceId, wellFormed ? hello.PairingCode : null, now))
         {
-            RecordBadCode(hello.DeviceId, now);
-            return await RejectAsync(c, RejectReason.BadCode).ConfigureAwait(false);
+            case CodeResult.LockedOut: return await RejectAsync(c, RejectReason.LockedOut).ConfigureAwait(false);
+            case CodeResult.Bad: return await RejectAsync(c, RejectReason.BadCode).ConfigureAwait(false);
         }
 
         // Register and send Welcome under the write lock, so a concurrent SetLatency to this client is queued behind
@@ -411,7 +422,6 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
                             replaced = existing;
                         }
 
-                        _badCodes.Remove(hello.DeviceId);
                         c.Info = new ConnectedClient(hello.DeviceId, name!, new IPEndPoint(c.RemoteAddress, hello.AudioPort),
                                                      Ready: false, LastStats: null, Volume: 1f, OffsetMs: 0);
                         _joined.Add(c);
@@ -419,6 +429,9 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
                     }
                 }
             }
+
+            // Close right away: if the Welcome write below throws, the replaced socket must not linger untracked.
+            replaced?.Close();
 
             if (joined)
             {
@@ -431,7 +444,6 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
             c.WriteLock.Release();
         }
 
-        replaced?.Close();
         if (full) return await RejectAsync(c, RejectReason.SessionFull).ConfigureAwait(false);
         if (!joined) return false;
 
@@ -566,25 +578,32 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
         return trimmed.Length > MaxNameLength ? trimmed[..MaxNameLength].TrimEnd() : trimmed;
     }
 
-    private bool CodeMatches(string supplied)
-        => CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), _codeBytes);
+    private enum CodeResult { Ok, Bad, LockedOut }
 
-    private bool IsLockedOut(Guid deviceId, long now)
+    /// <summary>
+    /// The lockout check, the code comparison and the failure bookkeeping for one Hello, as one atomic step under the
+    /// gate: concurrent attempts for a device are serialized, so none can slip past a lockout, add a guess beyond the
+    /// limit, or erase a lockout another attempt just set. <paramref name="suppliedCode"/> null means the Hello was
+    /// malformed, which counts as a bad code.
+    /// </summary>
+    private CodeResult CheckCode(Guid deviceId, string? suppliedCode, long now)
     {
         lock (_gate)
         {
-            if (!_badCodes.TryGetValue(deviceId, out var entry) || entry.LockedUntil == 0) return false;
-            if (entry.LockedUntil > now) return true;
-            _badCodes.Remove(deviceId);   // lockout served
-            return false;
-        }
-    }
+            if (_badCodes.TryGetValue(deviceId, out var entry) && entry.LockedUntil != 0)
+            {
+                if (entry.LockedUntil > now) return CodeResult.LockedOut;
+                _badCodes.Remove(deviceId);   // lockout served
+            }
 
-    private void RecordBadCode(Guid deviceId, long now)
-    {
-        lock (_gate)
-        {
-            if (!_badCodes.TryGetValue(deviceId, out var entry))
+            if (suppliedCode is not null && suppliedCode.Length <= MaxCodeChars
+                && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(suppliedCode), _codeBytes))
+            {
+                _badCodes.Remove(deviceId);
+                return CodeResult.Ok;
+            }
+
+            if (!_badCodes.TryGetValue(deviceId, out entry))
             {
                 if (_badCodes.Count >= MaxTrackedDevices)
                 {
@@ -592,13 +611,14 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
                     foreach (var key in _badCodes.Where(kv => kv.Value.LockedUntil != 0 && kv.Value.LockedUntil <= now)
                                                  .Select(kv => kv.Key).ToList())
                         _badCodes.Remove(key);
-                    if (_badCodes.Count >= MaxTrackedDevices) return;
+                    if (_badCodes.Count >= MaxTrackedDevices) return CodeResult.Bad;
                 }
                 entry = (0, 0);
             }
 
             int failures = entry.Failures + 1;
             _badCodes[deviceId] = failures >= BadCodeLimit ? (0, now + LockoutTicks) : (failures, 0);
+            return CodeResult.Bad;
         }
     }
 }
