@@ -41,6 +41,9 @@ public sealed class FakeOutput : IAudioOutput
     /// <summary>Every sample sent to the device (interleaved stereo), including the initial period of silence.</summary>
     public List<float> Samples { get; } = new();
 
+    /// <summary>When false, <see cref="Samples"/> is not filled (long runs would otherwise hold every sample).</summary>
+    public bool RecordSamples { get; set; } = true;
+
     /// <summary>Runs at the start of each callback, before Render (e.g. to deliver packets).</summary>
     public Action? BeforeEachCallback { get; set; }
 
@@ -55,7 +58,8 @@ public sealed class FakeOutput : IAudioOutput
         _startTicks = _sim.Now;
         _callbackIndex = 0;
         int generation = ++_generation;
-        for (int i = 0; i < _period * AudioFormat.Channels; i++) Samples.Add(0f);
+        if (RecordSamples)
+            for (int i = 0; i < _period * AudioFormat.Channels; i++) Samples.Add(0f);
         _sim.Schedule(_startTicks, () => Callback(generation));
     }
 
@@ -87,7 +91,7 @@ public sealed class FakeOutput : IAudioOutput
 
         long heard = _sim.Now + (long)Math.Round((writePosition - devicePosition) * _trueTicksPerFrame);
         Heard.Add((heard, probe));
-        Samples.AddRange(_buffer);
+        if (RecordSamples) Samples.AddRange(_buffer);
 
         _callbackIndex++;
         _sim.Schedule(CallbackTime(_callbackIndex), () => Callback(generation));
