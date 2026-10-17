@@ -187,6 +187,30 @@ public class PlaybackSchedulerTests
     }
 
     [Fact]
+    public void Slew_after_sub_resync_step_does_not_overshoot()
+    {
+        // A 6 ms step (below the 20 ms hard-resync threshold) is slewed out at the full ±500 ppm correction for ~12 s.
+        // The integral must not wind up meanwhile, or playback overshoots by ~1 ms once the error crosses zero.
+        // Device as in the virtual session's remote B: 44.1 kHz, 20 ms periods, −100 ppm.
+        const uint stepSeq = 1000;              // playAt ≈ 5.2 s
+        const long stepTicks = -60_000;         // later frames due 6 ms earlier: playback falls behind
+        var rig = new Rig(sampleRate: 44100, period: 882, deviceDriftPpm: -100) { PlayAtShift = seq => seq >= stepSeq ? stepTicks : 0 };
+        rig.Run(60);
+        Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
+
+        long stepAt = Rig.PlayAt(stepSeq) + Second;
+        var errors = rig.Output.Heard
+            .Where(h => h.TrueTicksHeard > stepAt)
+            .Select(h => h.StreamPos - Rig.Truth(h.TrueTicksHeard, shiftTicks: stepTicks))
+            .ToList();
+        Assert.True(errors[0] < -200, $"step not applied: initial error {errors[0]:F1} samples");
+        int crossing = errors.FindIndex(e => e >= 0);
+        Assert.True(crossing > 0, "error never crossed zero");
+        double overshoot = errors.Skip(crossing).Max(e => Math.Abs(e));
+        Assert.True(overshoot < 12, $"overshoot after slew {overshoot:F1} samples ({overshoot / 48:F3} ms), bound 12 (0.25 ms)");
+    }
+
+    [Fact]
     public void Missing_frames_are_concealed()
     {
         var rig = new Rig(deviceDriftPpm: 100) { Skip = seq => seq % 50 == 49 };

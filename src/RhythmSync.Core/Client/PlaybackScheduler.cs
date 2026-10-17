@@ -169,8 +169,7 @@ public sealed class PlaybackScheduler : IRenderCallback
         }
         else
         {
-            _integral = Math.Clamp(_integral + err, -MaxIntegral, MaxIntegral);
-            corr = Math.Clamp(Kp * err + Ki * _integral, -MaxCorrection, MaxCorrection);
+            corr = Correction(err);
             Resample(stereo, n, _nominalStep * (1 + corr));
             if (_fadeInPending)
             {
@@ -186,6 +185,23 @@ public sealed class PlaybackScheduler : IRenderCallback
         Volatile.Write(ref _ratioPpm, corr * 1e6);
         Volatile.Write(ref _lastRenderStreamPosition, startPos);
         Interlocked.Exchange(ref _concealedFrames, _concealer.ConcealedFrames);
+    }
+
+    /// <summary>
+    /// PI rate correction for error <paramref name="err"/> (stream samples), clamped to ±<see cref="MaxCorrectionPpm"/>.
+    /// Anti-windup: while the output is saturated in the direction the error pushes, the integral is held, so a long
+    /// slew (e.g. a sub-resync step in the clock mapping) does not leave it wound up and overshoot once the error is gone.
+    /// </summary>
+    private double Correction(double err)
+    {
+        double integral = Math.Clamp(_integral + err, -MaxIntegral, MaxIntegral);
+        double raw = Kp * err + Ki * integral;
+        bool windingUp = (raw > MaxCorrection && err > 0) || (raw < -MaxCorrection && err < 0);
+        if (windingUp)
+            raw = Kp * err + Ki * _integral;
+        else
+            _integral = integral;
+        return Math.Clamp(raw, -MaxCorrection, MaxCorrection);
     }
 
     private bool IsAvailable(double streamSample)
