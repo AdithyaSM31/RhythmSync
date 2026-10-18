@@ -11,7 +11,7 @@ Manual checks for the core sync engine (spec section 8.4 and section 1.2). Fill 
 
 ## Setup
 
-- Host: VB-CABLE installed, **CABLE Input** is the default playback device, real speakers chosen on the Host tab.
+- Host: VB-CABLE installed, **CABLE Input** is the default playback device, real speakers chosen on the Host page.
 - Two laptops side by side, 1 to 2 m apart. Phone or recorder at the midpoint between them.
 - Click-track audio file (one short click per second or similar) played from any app on the host.
 - Audacity (or any editor with sample-accurate zoom) to measure the gap between click onsets on the left and right laptop in the recording. At 48 kHz one sample is 0.02 ms; a 2 ms gap is 96 samples.
@@ -93,13 +93,13 @@ Useful while testing: `dotnet run --project src/RhythmSync.App -- --skip-firewal
 | D2.1 | Title bar buttons | Minimize, Maximize/Restore and Close work. Minimize and Close show hover and press states (Close turns red on hover). Maximize/Restore shows a hover state only (Windows owns that area for the snap layouts) and acts when the mouse button is released. Dragging the title bar moves the window; double-clicking it maximizes and restores. | [ ] | |
 | D2.2 | Snap layouts | Hover the Maximize button for about a second: the Windows 11 snap layouts flyout appears. Choosing a zone snaps the window. A plain click on Maximize maximizes, and a second click restores. | [ ] | |
 | D2.3 | Maximize hover does not stick | The Maximize button shows its hover look while the pointer is over it (and while the snap layouts are open). Move the pointer off the button and out of the window: the button goes back to normal and stays that way. | [ ] | |
-| D2.4 | Drag onto Maximize | Press the mouse button on the page content, drag over the Maximize button and release there. The window does NOT maximize. (Known risk to confirm: the button answers the non-client mouse messages, which should only arrive when the press started on the button.) | [ ] | |
+| D2.4 | Drag onto or off Maximize | Press the mouse button on the page content, drag over the Maximize button and release there: the window does NOT maximize (a release only clicks Maximize after a press on it). The other way round: press on the Maximize button, drag off it and release elsewhere: the window does NOT maximize either. Double-click the Maximize button: the window maximizes (or restores) once, not twice. | [ ] | |
 | D2.5 | Dark frame | The window border and shadow are dark and no light line shows around the title bar, when the window is active, inactive, maximized and snapped. | [ ] | |
 | D2.6 | 150% scaling | Set the display scale to 150% (Settings, System, Display, Scale), signing out and in if Windows asks. Repeat D1.1 to D1.8, D2.1 to D2.5 and D3.1 to D3.3: text is crisp, nothing is clipped or overlaps, the flyout still sits in the corner by the taskbar with its gap, and the snap layouts still appear over the Maximize button. Put the scale back afterwards. | [ ] | |
 
 ### D3. Tray icon and flyout
 
-Tray icon: a left-click opens the flyout and a second click closes it. Right-click keeps the menu (Show/Hide, a status line, Quit). Double-click still shows or hides the main window; the flyout may flash open on the first click of the double-click (known minor issue, not a failure).
+Tray icon: a left-click opens the flyout and a second click closes it. Right-click keeps the menu (Show/Hide, a status line, Quit). Double-click shows or hides the main window and closes the flyout that its first click opened, so the flyout never stays open over the window (it may flash briefly).
 
 | # | Check | Pass criterion | Pass | Measured / notes |
 |---|-------|----------------|------|------------------|
@@ -109,7 +109,7 @@ Tray icon: a left-click opens the flyout and a second click closes it. Right-cli
 | D3.4 | Esc and click-away | With the flyout open, Esc closes it. Open it again and click on the desktop or another window: it closes. Alt+F4 on the flyout only hides it; the app keeps running. | [ ] | |
 | D3.5 | Tray click while open | With the flyout open, click the tray icon: it closes and does not reopen (a click within 300 ms of the click-away is ignored). Click the tray icon again more than 300 ms later: it opens. | [ ] | |
 | D3.6 | Flyout grows and scrolls | With the flyout open while hosting, a PC joining or leaving adds or removes its row and the flyout stays against the taskbar. With 8 connected PCs the client list scrolls inside the flyout, the buttons stay visible, and the flyout never grows past the working area. | [ ] | Clients tested: |
-| D3.7 | Tray menu and double-click | Right-click shows Show/Hide, the status line and Quit; Show/Hide and Quit work (Quit exits cleanly, as in B10). Double-click on the icon shows or hides the window. | [ ] | |
+| D3.7 | Tray menu and double-click | Right-click shows Show/Hide, the status line and Quit; Show/Hide and Quit work (Quit exits cleanly, as in B10). Double-click on the icon shows or hides the window, and no flyout is left open over it. | [ ] | |
 
 ### D4. Settings, startup and `--minimized`
 

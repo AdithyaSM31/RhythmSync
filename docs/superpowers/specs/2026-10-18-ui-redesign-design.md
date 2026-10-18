@@ -110,7 +110,7 @@ Tinted fills use the status colour at 12–14% alpha, with borders at 25–30% a
   - Properties: `Text` (string) and `Kind` (enum `StatusKind { InSync, Hosting, Syncing, Degraded, Connecting, NotConnected }`).
   - Rendering: a pill with a 7 px dot. InSync and Hosting are Teal with a glow, Syncing is Accent with the pulse, Degraded is Warning, Connecting is muted, and NotConnected is Danger.
   - A pure static `StatusKinds.From(SyncState?, bool hosting)` maps app state to a `Kind`.
-- **`Banner`** (a `ContentControl`):
+- **`Banner`** (a custom `Control` with a template in `Themes/Banner.xaml`):
   - Properties: `Severity` (Warning, Info), `Message`, `ActionText` and `ActionCommand`. When `ActionText` is empty the action is hidden.
   - Rendering: a Warning-tint fill with a 3 px left bar, an icon glyph, the message, and an optional ghost action button.
 - **`PinBox`** (a `UserControl`):
@@ -211,12 +211,13 @@ An **About** Card:
 ## 5. Tray flyout (`TrayFlyoutWindow` + `TrayFlyoutViewModel`)
 
 - **Window:**
-  - Borderless, `Topmost`, `ShowInTaskbar=false`, 320 px wide with auto height.
+  - Borderless, `Topmost`, `ShowInTaskbar=false`, auto height. The transparent window is 336 px wide: a 320 px visible panel with an 8 px shadow margin on each side (placement keeps the panel 12 px from the working-area edges).
   - `Surface` (`#12141A`) with a `CardBorder` hairline, radius 14 and a soft drop shadow.
   - Content is laid out as in `flyout.html`.
 - **Opening and closing:**
   - Left-click on the tray icon toggles it; a second click closes it.
   - Right-click keeps the existing context menu (Show/Hide, Quit).
+  - A double-click closes the flyout (its first click opened it), then shows or hides the main window.
   - It closes on `Deactivated` (clicking elsewhere) or Esc.
   - Only one instance at a time.
 - **Placement:** a pure `FlyoutPlacement.Compute(Rect workArea, Rect screenBounds, Size flyoutSize, double margin = 12)` puts the flyout in the working-area corner nearest the taskbar (bottom, top, left or right edge), on the monitor that contains the cursor at click time. Values are in device-independent pixels (the caller converts with the window's DPI). If no monitor is found, it uses the primary screen.
@@ -226,7 +227,7 @@ An **About** Card:
   |---|---|
   | **Hosting** | Header: session name, StatusChip(Hosting), and the code (`Display` at 20 px). One item per client: status dot, name, sync error, and a volume slider. The slider calls the same host per-device setting path as the main window's row and saves the same way; it is clamped and NaN-guarded like the row. With no clients, "Waiting for PCs to join…". Buttons: DangerButton **"Stop hosting"**, SecondaryButton **"Open RhythmSync"**. |
   | **Joined (client)** | Header: host name and StatusChip(`StatusText`). An item with `SyncErrorText` · `DriftText` and `VolumeText` · `OffsetText` · "Set on the host". Buttons: **"Leave"**, **"Open RhythmSync"**. |
-  | **Idle** | Header: "RhythmSync" and StatusChip(NotConnected, "Not connected"). "Host this PC's audio, or join a host from the app." PrimaryButton **"Open RhythmSync"**. |
+  | **Idle** | Header: "RhythmSync" and StatusChip(Connecting, "Not connected"): grey, as in `flyout.html`, because idle is not an error. "Host this PC's audio, or join a host from the app." PrimaryButton **"Open RhythmSync"**. |
 
 - "Open RhythmSync" shows and activates the main window and closes the flyout. Stop hosting and Leave call the existing commands.
 - `TrayFlyoutViewModel` exposes no new behaviour. It projects the existing `HostViewModel`/`HostRuntime` and `ClientViewModel` state and reuses their commands. Cross-thread updates go through the existing `post` dispatcher pattern.
@@ -235,6 +236,7 @@ An **About** Card:
 
 - Every icon-only button has `AutomationProperties.Name`. Tab order follows the visual order. The focus ring is always visible on keyboard focus.
 - Colour is never the only signal: every status chip has text.
+- Screen readers read each status chip and banner by its text (a Text automation peer; banners are polite live regions), and the pairing code as "Pairing code {code}". The title bar's app glyph is decorative and has no name.
 - Missing icon glyphs fall back to the MDL2 font. A missing `Cascadia Mono` falls back to Consolas.
 - The flyout never throws into the tray click handler (exceptions are caught and logged). A failed DWM call (dark mode, older Windows) is ignored.
 
@@ -244,15 +246,18 @@ An **About** Card:
 src/RhythmSync.App/
   Themes/   Tokens.xaml Studio.xaml Buttons.xaml Slider.xaml ToggleSwitch.xaml TextBox.xaml ComboBox.xaml
             ScrollBar.xaml NavItem.xaml Card.xaml FocusVisual.xaml StatusChip.xaml Banner.xaml
-  Controls/ StatusChip.cs StatusKinds.cs Banner.cs PinBox.xaml(.cs) CodeEntry.cs
-  Shell/    TitleBar.xaml(.cs) WindowChromeHelper.cs (WM_NCHITTEST, DWM dark mode)
+  Controls/ StatusChip.cs StatusKinds.cs Banner.cs TextAutomationPeer.cs PinBox.xaml(.cs) CodeEntry.cs
+  Shell/    TitleBar.xaml(.cs) WindowChromeHelper.cs (WM_NCHITTEST, DWM dark mode) MaxButtonClickTracker.cs
   Flyout/   TrayFlyoutWindow.xaml(.cs) TrayFlyoutViewModel.cs FlyoutPlacement.cs
   Views/    SettingsView.xaml(.cs) (+ restyled HostTabView, HostView, ClientView, StatsPanel)
   ViewModels/ SettingsViewModel.cs (+ MainViewModel: SelectedPage, FooterText)
   Services/ IStartupRegistration.cs RegistryStartupRegistration.cs (+ TrayIcon: LeftClick event; StartupOptions: --minimized)
 src/RhythmSync.Core/Config/AppSettings.cs   (+ StartMinimized, default false; JSON stays backward compatible)
-tests/RhythmSync.App.Tests/  CodeEntryTests FlyoutPlacementTests SettingsViewModelTests TrayFlyoutViewModelTests
-                             StatusKindsTests ShellNavigationTests MarkupSmokeTests
+tests/RhythmSync.App.Tests/  Ui/UiDispatcher.cs Ui/BindingErrorRecorder.cs Ui/UiCollection.cs UiHarnessTests
+                             ThemeTests CodeEntryTests StatusKindsTests ControlSmokeTests ShellTests MainWindowSmokeTests
+                             HostPagesSmokeTests JoinPageSmokeTests SettingsViewModelTests StartupRegistrationTests
+                             SettingsSmokeTests FlyoutPlacementTests FlyoutToggleTests TrayFlyoutViewModelTests
+                             FlyoutSmokeTests (+ ViewMarkupTests)
 ```
 
 `AppSettings` is the only change outside the App. It is backward compatible: missing JSON field → false.
