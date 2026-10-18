@@ -207,6 +207,48 @@ public class HostSessionTests
     }
 
     [Fact]
+    public async Task More_than_ten_bad_codes_from_any_devices_lock_everyone_out_for_30s()
+    {
+        await using var rig = await new Rig().StartAsync();
+
+        // Rotating device ids defeats the per-device limit, but not the global one.
+        for (int i = 0; i < 11; i++)
+        {
+            Assert.Equal(new Reject(RejectReason.BadCode), (await rig.JoinAsync(Guid.NewGuid(), code: "0000")).Reply);
+            rig.Clock.Advance(TimeSpan.FromSeconds(2));   // all 11 within the 30 s window
+        }
+        var honest = Guid.NewGuid();
+        Assert.Equal(new Reject(RejectReason.LockedOut), (await rig.JoinAsync(honest, code: "1234")).Reply);
+
+        rig.Clock.Advance(TimeSpan.FromSeconds(31));
+        Assert.IsType<Welcome>((await rig.JoinAsync(honest, code: "1234")).Reply);
+    }
+
+    [Fact]
+    public async Task The_global_limit_counts_invalid_hellos_and_only_failures_inside_a_sliding_30s_window()
+    {
+        await using var rig = await new Rig().StartAsync();
+
+        for (int i = 0; i < 6; i++)
+            Assert.Equal(new Reject(RejectReason.BadCode), (await rig.JoinAsync(Guid.NewGuid(), code: "0000")).Reply);
+        rig.Clock.Advance(TimeSpan.FromSeconds(31));   // those six have left the window
+
+        for (int i = 0; i < 4; i++)
+        {
+            var bad = await rig.ConnectAsync();
+            await bad.SendAsync(new Hello(Guid.NewGuid(), "", "1234", 1, 5000));   // invalid: counts as a bad code
+            Assert.Null(await ReadUntilClosed(bad));
+        }
+        for (int i = 0; i < 6; i++)
+            Assert.Equal(new Reject(RejectReason.BadCode), (await rig.JoinAsync(Guid.NewGuid(), code: "0000")).Reply);
+
+        // Ten failures in the window: still open. The eleventh closes it.
+        Assert.IsType<Welcome>((await rig.JoinAsync(Guid.NewGuid())).Reply);
+        Assert.Equal(new Reject(RejectReason.BadCode), (await rig.JoinAsync(Guid.NewGuid(), code: "0000")).Reply);
+        Assert.Equal(new Reject(RejectReason.LockedOut), (await rig.JoinAsync(Guid.NewGuid())).Reply);
+    }
+
+    [Fact]
     public async Task Parallel_bad_hellos_lock_out_after_exactly_three_guesses()
     {
         await using var rig = await new Rig().StartAsync();

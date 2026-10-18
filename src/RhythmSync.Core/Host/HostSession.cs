@@ -22,7 +22,7 @@ public interface IHostControl
 }
 
 /// <summary>
-/// The host's control plane: a TCP server that admits clients (pairing code, protocol version, capacity, lockout),
+/// The host's control plane: a TCP server that admits clients (pairing code, protocol version, capacity, lockouts),
 /// adds <c>Ready</c> clients to the audio <see cref="Streamer"/>, exchanges heartbeats, drops silent clients and pushes
 /// per-device settings and latency changes. Time comes from the injected <see cref="ISessionClock"/>; <see cref="Tick"/>
 /// must be called regularly (about every 250 ms is plenty) by the owner.
@@ -31,6 +31,9 @@ public interface IHostControl
 /// Every connection runs in its own task which handles all of its own failures: a malformed, truncated, oversize or
 /// hostile peer closes only its own connection, never the listener or the session. Messages from a client are never
 /// trusted: a <see cref="Hello"/> is validated member by member because the codec does not enforce required members.
+/// Guessing the 4-digit code is limited twice: 3 bad codes lock that device id out for 30 s, and more than 10 bad codes
+/// from any devices within a sliding 30 s window lock every Hello out until 30 s after the 11th (so rotating device
+/// ids does not help). A malformed Hello counts as a bad code.
 /// </remarks>
 public sealed class HostSession : IHostControl, IAsyncDisposable
 {
@@ -43,6 +46,8 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
     private const int MaxNameLength = 64;
     private const int MaxCodeChars = 256;
     private const int BadCodeLimit = 3;
+    private const int GlobalBadCodeLimit = 10;
+    private const long GlobalWindowTicks = 30 * AudioFormat.TicksPerSecond;
     private const int MaxTrackedDevices = 1024;
     private const int MaxPendingConnections = 32;
     private const long LockoutTicks = 30 * AudioFormat.TicksPerSecond;
@@ -100,6 +105,8 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
     private readonly List<Connection> _joined = new();
     private readonly HashSet<Connection> _all = new();
     private readonly Dictionary<Guid, (int Failures, long LockedUntil)> _badCodes = new();
+    private readonly Queue<long> _recentBadCodes = new();   // times of bad codes from any device, within the window
+    private long _globalLockedUntil;
     private TcpListener? _listener;
     private Task _acceptTask = Task.CompletedTask;
     private bool _disposed;
@@ -590,6 +597,8 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
     {
         lock (_gate)
         {
+            if (now < _globalLockedUntil) return CodeResult.LockedOut;
+
             if (_badCodes.TryGetValue(deviceId, out var entry) && entry.LockedUntil != 0)
             {
                 if (entry.LockedUntil > now) return CodeResult.LockedOut;
@@ -611,14 +620,29 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
                     foreach (var key in _badCodes.Where(kv => kv.Value.LockedUntil != 0 && kv.Value.LockedUntil <= now)
                                                  .Select(kv => kv.Key).ToList())
                         _badCodes.Remove(key);
-                    if (_badCodes.Count >= MaxTrackedDevices) return CodeResult.Bad;
+                    if (_badCodes.Count >= MaxTrackedDevices)
+                    {
+                        RecordGlobalBadCodeLocked(now);
+                        return CodeResult.Bad;
+                    }
                 }
                 entry = (0, 0);
             }
 
             int failures = entry.Failures + 1;
             _badCodes[deviceId] = failures >= BadCodeLimit ? (0, now + LockoutTicks) : (failures, 0);
+            RecordGlobalBadCodeLocked(now);
             return CodeResult.Bad;
         }
+    }
+
+    /// <summary>Counts a bad code toward the global limit; the 11th within the window locks every Hello out for 30 s.</summary>
+    private void RecordGlobalBadCodeLocked(long now)
+    {
+        while (_recentBadCodes.TryPeek(out long oldest) && oldest <= now - GlobalWindowTicks) _recentBadCodes.Dequeue();
+        _recentBadCodes.Enqueue(now);
+        if (_recentBadCodes.Count <= GlobalBadCodeLimit) return;
+        _globalLockedUntil = now + LockoutTicks;
+        _recentBadCodes.Clear();   // all older than the lockout's end by the time it ends
     }
 }
