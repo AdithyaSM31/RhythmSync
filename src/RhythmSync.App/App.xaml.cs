@@ -97,7 +97,8 @@ public partial class App : Application
         // The client session is created on the first join and disposed while hosting, so the two modes never share ports.
         var client = new ClientSessionHolder(() => new ClientSession(
             new ClientSessionOptions(_settings.Current.DeviceId, _settings.Current.DeviceName), clock,
-            new UdpDatagramChannelFactory(), new WasapiOutputFactory(() => null)));
+            new UdpDatagramChannelFactory(), new WasapiOutputFactory(() => null)),
+            currentDeviceName: () => _settings.Current.DeviceName);   // read live: a rename in Settings reaches the next join
         _client = client;
         var clientVm = new ClientViewModel(() => _listener?.Hosts ?? Array.Empty<DiscoveredHost>(),
             (endpoint, code) => client.JoinAsync(endpoint, code), client, post)

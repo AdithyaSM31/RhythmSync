@@ -82,6 +82,73 @@ public class ClientSessionHolderTests
         await holder.DisposeAsync();
     }
 
+    // ---- a renamed PC says its new name in the next Hello ---------------------------------------------------------------
+
+    private string _deviceName = "A";
+    private readonly List<(string Name, ClientSession Session)> _built = new();
+
+    private ClientSessionHolder MakeNamed() => new(() =>
+    {
+        var session = new ClientSession(new ClientSessionOptions(Guid.NewGuid(), _deviceName), new StopwatchClock(), new ThrowingChannels(), new NoOutputs());
+        _built.Add((_deviceName, session));
+        return session;
+    }, () => _deviceName);
+
+    private static Task JoinFails(ClientSessionHolder holder) =>
+        Assert.ThrowsAnyAsync<Exception>(() => holder.JoinAsync(new IPEndPoint(IPAddress.Loopback, 1), "1234"));
+
+    [Fact]
+    public async Task A_rename_while_disconnected_builds_a_new_session_for_the_next_join_and_disposes_the_old_one()
+    {
+        var holder = MakeNamed();
+        await JoinFails(holder);
+        await holder.LeaveAsync();
+        _deviceName = "B";
+
+        await JoinFails(holder);
+
+        Assert.Equal(new[] { "A", "B" }, _built.Select(b => b.Name));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => _built[0].Session.JoinAsync(new IPEndPoint(IPAddress.Loopback, 1), "1234", CancellationToken.None));   // the old session was disposed
+        await holder.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task The_same_name_keeps_the_session()
+    {
+        var holder = MakeNamed();
+        await JoinFails(holder);
+        await holder.LeaveAsync();
+
+        await JoinFails(holder);
+
+        Assert.Single(_built);
+        await holder.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Without_a_name_provider_the_session_is_kept()
+    {
+        var holder = Make();
+        await JoinFails(holder);
+
+        await JoinFails(holder);
+
+        Assert.Equal(1, _created);
+        await holder.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task A_rename_does_not_unblock_joining_while_hosting()
+    {
+        var holder = MakeNamed();
+        await JoinFails(holder);
+        await holder.ReleaseAsync();
+        _deviceName = "B";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => holder.JoinAsync(new IPEndPoint(IPAddress.Loopback, 1), "1234"));
+        Assert.Single(_built);
+    }
+
     [Fact]
     public async Task Dispose_twice_and_release_twice_are_safe()
     {
