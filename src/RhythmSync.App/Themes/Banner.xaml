@@ -19,6 +19,9 @@
     <Style TargetType="c:Banner">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
+        <!-- Screen readers read the banner by its message (see TextAutomationPeer), as a polite live region. -->
+        <Setter Property="AutomationProperties.Name" Value="{Binding Message, RelativeSource={RelativeSource Self}, TargetNullValue=''}" />
+        <Setter Property="AutomationProperties.LiveSetting" Value="Polite" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="c:Banner">

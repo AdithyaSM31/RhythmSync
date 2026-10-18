@@ -1,6 +1,7 @@
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Xml.Linq;
@@ -121,6 +122,7 @@ public class HostPagesSmokeTests
             // The code is one big glyph per character, and the speaker picker sits in the settings card.
             var code = Descendants<ItemsControl>(tab).Single(i => Equals(i.ItemsSource, "4729"));
             Assert.Equal(4, code.Items.Count);
+            Assert.Equal("Pairing code 4729", AutomationProperties.GetName(code));   // read as one name, not four glyphs
             var picker = Assert.Single(Descendants<ComboBox>(tab), c => Shown(c));
             var tabVm = (HostTabViewModel)tab.DataContext;
             Assert.Single(picker.Items);

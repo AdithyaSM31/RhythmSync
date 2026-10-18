@@ -21,6 +21,8 @@
     <Style TargetType="c:StatusChip">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
+        <!-- Screen readers read the chip by its text (see TextAutomationPeer). -->
+        <Setter Property="AutomationProperties.Name" Value="{Binding Text, RelativeSource={RelativeSource Self}, TargetNullValue=''}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="c:StatusChip">

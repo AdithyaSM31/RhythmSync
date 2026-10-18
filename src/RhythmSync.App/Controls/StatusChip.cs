@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 
@@ -38,6 +39,9 @@ public sealed class StatusChip : Control
         get => (StatusKind)GetValue(KindProperty);
         set => SetValue(KindProperty, value);
     }
+
+    /// <summary>Screen readers see the chip as Text named by <see cref="Text"/>.</summary>
+    protected override AutomationPeer OnCreateAutomationPeer() => new TextAutomationPeer(this, nameof(StatusChip), () => Text);
 
     public override void OnApplyTemplate()
     {

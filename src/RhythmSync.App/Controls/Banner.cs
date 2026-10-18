@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Input;
 
@@ -65,4 +66,7 @@ public sealed class Banner : Control
     }
 
     public bool HasAction => (bool)GetValue(HasActionProperty);
+
+    /// <summary>Screen readers see the banner as Text named by <see cref="Message"/>; the theme makes it a polite live region.</summary>
+    protected override AutomationPeer OnCreateAutomationPeer() => new TextAutomationPeer(this, nameof(Banner), () => Message);
 }

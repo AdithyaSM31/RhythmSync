@@ -199,6 +199,60 @@ public class ControlSmokeTests
         });
     }
 
+    [Fact]
+    public void StatusChip_is_read_by_screen_readers_as_its_text()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var chip = Chip(StatusKind.InSync, "In sync");
+
+            var peer = UIElementAutomationPeer.CreatePeerForElement(chip);
+            Assert.NotNull(peer);
+            Assert.Equal("In sync", peer.GetName());
+            Assert.True(peer.IsControlElement());
+            Assert.Equal(AutomationControlType.Text, peer.GetAutomationControlType());
+            Assert.Equal("In sync", AutomationProperties.GetName(chip));
+
+            chip.Text = "Sync is degraded";
+            Settle(chip);
+            Assert.Equal("Sync is degraded", peer.GetName());
+
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void Banner_is_read_by_screen_readers_as_its_message_and_announced_politely()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var banner = new Banner { Message = "Heads up", ActionText = "Open sound settings" };
+            var host = RenderInHost(banner, 600, 60);
+
+            var peer = UIElementAutomationPeer.CreatePeerForElement(banner);
+            Assert.NotNull(peer);
+            Assert.Equal("Heads up", peer.GetName());
+            Assert.True(peer.IsControlElement());
+            Assert.Equal(AutomationControlType.Text, peer.GetAutomationControlType());
+            Assert.Equal(AutomationLiveSetting.Polite, peer.GetLiveSetting());
+            Assert.Equal("Heads up", AutomationProperties.GetName(banner));
+
+            banner.Message = "Something else";
+            UiDispatcher.Render(host, 600, 60);
+            Assert.Equal("Something else", peer.GetName());
+
+            banner.Visibility = Visibility.Collapsed;   // a hidden banner stays out of the control view
+            Assert.False(peer.IsControlElement());
+            banner.Visibility = Visibility.Visible;
+            host.Visibility = Visibility.Collapsed;   // and so does one inside a hidden parent
+            Assert.False(peer.IsControlElement());
+
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
     private sealed class FakeViewModel : System.ComponentModel.INotifyPropertyChanged
     {
         private string _code = "";

@@ -20,7 +20,7 @@
                     <StackPanel>
                         <TextBlock Text="Pairing code" Style="{StaticResource CaptionText}" />
                         <!-- One TextBlock per character: WPF has no letter spacing. The negative margin takes back the gap after the last one. -->
-                        <ItemsControl ItemsSource="{Binding PairingCode}" Margin="0,6,-8,6" AutomationProperties.Name="Pairing code" Focusable="False">
+                        <ItemsControl ItemsSource="{Binding PairingCode}" Margin="0,6,-8,6" AutomationProperties.Name="{Binding PairingCode, StringFormat='Pairing code {0}'}" Focusable="False">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal" />

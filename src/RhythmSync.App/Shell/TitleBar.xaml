@@ -93,8 +93,9 @@
                         AutomationProperties.Name="Close" ToolTip="Close" Click="OnClose" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <!-- The glyph is decorative: no automation name, so the window title is not read twice. -->
                 <TextBlock Text="&#xE8D6;" FontFamily="{StaticResource FontIcons}" FontSize="14" VerticalAlignment="Center"
-                           Foreground="{StaticResource AccentBrush}" Margin="0,0,8,0" AutomationProperties.Name="RhythmSync icon" />
+                           Foreground="{StaticResource AccentBrush}" Margin="0,0,8,0" />
                 <TextBlock Text="RhythmSync" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}" />
             </StackPanel>
         </DockPanel>

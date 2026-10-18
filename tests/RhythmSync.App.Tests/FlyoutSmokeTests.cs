@@ -154,7 +154,7 @@ public sealed class FlyoutSmokeTests
             Assert.Contains("80%", texts);
             Assert.DoesNotContain(TrayFlyoutViewModel.WaitingText, texts);
             Assert.Equal("4729", string.Concat(Descendants<ItemsControl>(rig.Window)
-                .Single(i => AutomationProperties.GetName(i) == "Pairing code").Items.Cast<char>()));
+                .Single(i => AutomationProperties.GetName(i) == "Pairing code 4729").Items.Cast<char>()));
             chip = Assert.Single(Descendants<StatusChip>(rig.Window), Shown);
             Assert.Equal((StatusKind.Hosting, "Hosting"), (chip.Kind, chip.Text));
             Assert.Equal(2, Descendants<Slider>(rig.Window).Count(Shown));
