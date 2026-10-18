@@ -312,8 +312,9 @@ public sealed class ClientSession : IAsyncDisposable
                         RebuildOutputLocked(c, now);
                     }
 
-                    // Not playing yet means still syncing, even if the estimator converged a moment ago.
-                    var state = c.Pipeline is null ? SyncState.Syncing : SyncStateEvaluator.Evaluate(c.Estimator, now);
+                    // No running output (not started yet, failed to start, or being rebuilt) means still syncing, even if
+                    // the estimator converged: nothing is being played in sync.
+                    var state = c.Pipeline is null || c.Output is null ? SyncState.Syncing : SyncStateEvaluator.Evaluate(c.Estimator, now);
                     changed |= SetStateLocked(state);
 
                     if (!c.HeartbeatSent || now - c.LastHeartbeatTicks >= HeartbeatIntervalTicks)
@@ -384,7 +385,7 @@ public sealed class ClientSession : IAsyncDisposable
         c.Window = new StatsWindow();
         Volatile.Write(ref _audioTarget, pipeline);
         StartOutputLocked(c, output, now);
-        return true;   // Ready even if the output failed to start: audio is buffered and the output is retried
+        return true;   // Ready even if the output failed to start: audio is buffered (the state stays Syncing) and the output is retried
     }
 
     /// <summary>Replaces an invalidated (or missing) output: the old one is stopped and disposed first.</summary>

@@ -25,7 +25,13 @@ public class ClientSessionTests
     /// <summary>A no-op output device that records how it is driven.</summary>
     private sealed class NoopOutput : IAudioOutput
     {
-        public NoopOutput(int sampleRate) => SampleRate = sampleRate;
+        private readonly bool _failStart;
+
+        public NoopOutput(int sampleRate, bool failStart = false)
+        {
+            SampleRate = sampleRate;
+            _failStart = failStart;
+        }
 
         public int SampleRate { get; }
         public IRenderCallback? Callback { get; private set; }
@@ -37,6 +43,7 @@ public class ClientSessionTests
 
         public void Start(IRenderCallback cb)
         {
+            if (_failStart) throw new InvalidOperationException("device busy");
             Callback = cb;
             Started = true;
         }
@@ -52,8 +59,19 @@ public class ClientSessionTests
     {
         private readonly List<NoopOutput> _created = new();
 
+        private int _failCreates, _failStarts, _attempts;
+
         /// <summary>Rate of the next output created.</summary>
         public int SampleRate { get; set; } = 48000;
+
+        /// <summary>How many of the next Create calls throw.</summary>
+        public int FailCreates { set => Volatile.Write(ref _failCreates, value); }
+
+        /// <summary>How many of the next created outputs throw from Start.</summary>
+        public int FailStarts { set => Volatile.Write(ref _failStarts, value); }
+
+        /// <summary>Create calls, failed ones included.</summary>
+        public int Attempts => Volatile.Read(ref _attempts);
 
         public int CreateCalls
         {
@@ -67,7 +85,15 @@ public class ClientSessionTests
 
         public IAudioOutput Create()
         {
-            var o = new NoopOutput(SampleRate);
+            Interlocked.Increment(ref _attempts);
+            if (Volatile.Read(ref _failCreates) > 0)
+            {
+                Interlocked.Decrement(ref _failCreates);
+                throw new InvalidOperationException("no device");
+            }
+            bool failStart = Volatile.Read(ref _failStarts) > 0;
+            if (failStart) Interlocked.Decrement(ref _failStarts);
+            var o = new NoopOutput(SampleRate, failStart);
             lock (_created) _created.Add(o);
             return o;
         }
@@ -102,6 +128,53 @@ public class ClientSessionTests
         {
             await Host.DisposeAsync();
             Pipeline.Dispose();
+        }
+    }
+
+    /// <summary>Stands in for the host's capture device: pushes real-time silence into the host pipeline when pumped.</summary>
+    private sealed class LiveCapture(HostPipeline pipeline)
+    {
+        private const int Chunk = 480;
+        private readonly StopwatchClock _clock = new();
+        private readonly float[] _silence = new float[Chunk * AudioFormat.Channels];
+        private readonly long _t0 = new StopwatchClock().NowTicks;
+        private long _position;
+
+        public void Pump()
+        {
+            long due = (_clock.NowTicks - _t0) * AudioFormat.SampleRate / AudioFormat.TicksPerSecond;
+            for (; _position + Chunk <= due; _position += Chunk)
+                pipeline.OnCaptured(_silence, _position, _t0 + _position * AudioFormat.TicksPerSecond / AudioFormat.SampleRate);
+        }
+    }
+
+    /// <summary>Stands in for a running output device: renders the scheduler in real time, keeping 10 ms queued, when pumped.</summary>
+    private sealed class LiveRender
+    {
+        private const int Queued = 480;
+        private readonly StopwatchClock _clock = new();
+        private readonly float[] _buffer = new float[48000 * AudioFormat.Channels];
+        private PlaybackScheduler? _scheduler;
+        private long _t0, _written;
+
+        /// <summary>The last rendered buffer was audio (not silence).</summary>
+        public bool Playing { get; private set; }
+
+        public void Pump(PlaybackScheduler scheduler)
+        {
+            long now = _clock.NowTicks;
+            if (!ReferenceEquals(scheduler, _scheduler))
+            {
+                _scheduler = scheduler;
+                _t0 = now;
+                _written = 0;
+            }
+            long device = (now - _t0) * AudioFormat.SampleRate / AudioFormat.TicksPerSecond;
+            int frames = (int)Math.Min(device + Queued - _written, 48000);
+            if (frames <= 0) return;
+            scheduler.Render(_buffer.AsSpan(0, frames * AudioFormat.Channels), new RenderTiming(device, now, _written));
+            _written += frames;
+            Playing = !double.IsNaN(scheduler.LastRenderStreamPosition);
         }
     }
 
@@ -146,6 +219,68 @@ public class ClientSessionTests
         await TickUntil(() => rig.Host.Clients is [{ Ready: true }], client, TimeSpan.FromSeconds(5), () => rig);
         Assert.True(outputs.Last.Started);
         Assert.NotNull(client.Stats);
+    }
+
+    [Fact]
+    public async Task An_output_that_fails_to_start_is_not_reported_in_sync()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var outputs = new FakeOutputFactory { FailStarts = 1 };
+        await using var client = NewClient(outputs);
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+
+        await TickUntil(() => client.OutputFailures == 1, client, TimeSpan.FromSeconds(5), () => rig);
+        client.Tick();
+        Assert.Equal(SyncState.Syncing, client.State);   // the clock has converged, but nothing is playing
+
+        await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
+        Assert.True(outputs.Last.Started);   // retried about a second later
+    }
+
+    [Fact]
+    public async Task Audio_resumes_after_an_output_outage_and_the_state_is_in_sync_only_while_an_output_runs()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var outputs = new FakeOutputFactory();
+        await using var client = NewClient(outputs);
+        var capture = new LiveCapture(rig.Pipeline);
+        var render = new LiveRender();
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        await TickUntil(() => client.State == SyncState.InSync && rig.Host.Clients is [{ Ready: true }], client, TimeSpan.FromSeconds(5), () => rig);
+        await TickUntil(() =>
+        {
+            capture.Pump();
+            render.Pump(SchedulerOf(outputs.Last));
+            return render.Playing;
+        }, client, TimeSpan.FromSeconds(5), () => rig);
+
+        // The device goes away and the next two attempts to open one fail: an outage of about 2 s, longer than the
+        // jitter buffer (1.28 s), while the host keeps streaming.
+        var first = outputs.Last;
+        outputs.FailCreates = 2;
+        first.RaiseInvalidated();
+        client.Tick();
+        Assert.True(first.Stopped);
+        Assert.Equal(SyncState.Syncing, client.State);
+
+        bool inSyncWithoutOutput = false;
+        Stopwatch? sinceOutput = null;
+        await TickUntil(() =>
+        {
+            capture.Pump();
+            var current = outputs.Last;
+            bool running = !ReferenceEquals(current, first) && current.Started && !current.Stopped;
+            if (client.State == SyncState.InSync && !running) inSyncWithoutOutput = true;
+            if (!running) return false;
+            sinceOutput ??= Stopwatch.StartNew();
+            render.Pump(SchedulerOf(current));
+            return render.Playing;
+        }, client, TimeSpan.FromSeconds(8), () => rig);
+
+        Assert.False(inSyncWithoutOutput);
+        Assert.Equal(4, outputs.Attempts);   // the first output, two failures, the replacement
+        Assert.True(sinceOutput!.Elapsed < TimeSpan.FromSeconds(1), $"audio resumed {sinceOutput.Elapsed.TotalSeconds:F2} s after the output started");
+        await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(2), () => rig);
     }
 
     [Fact]

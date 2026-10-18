@@ -27,6 +27,7 @@ public class PlaybackSchedulerTests
         public bool Feed = true;
         public Func<uint, bool> Skip = _ => false;
         public Func<uint, long> PlayAtShift = _ => 0;
+        public bool AllowRejects;   // a full buffer may refuse frames (e.g. while the output is stopped)
 
         private readonly short[] _pcm = new short[AudioFormat.FrameFloats];
         private uint _next;
@@ -50,6 +51,17 @@ public class PlaybackSchedulerTests
             Sim.RunUntil(T0 + (long)(seconds * Second));
         }
 
+        /// <summary>Delivers frames every 5 ms from now on, whether or not the output runs (a network thread).</summary>
+        public void StartNetwork()
+        {
+            void Receive()
+            {
+                Deliver();
+                Sim.Schedule(Sim.Now + AudioFormat.FrameTicks, Receive);
+            }
+            Sim.Schedule(Sim.Now, Receive);
+        }
+
         /// <summary>Stream position that should be heard at true time <paramref name="heard"/>.</summary>
         public static double Truth(long heard, long offsetTicks = 0, long shiftTicks = 0) =>
             (heard - offsetTicks - shiftTicks - PlayAt(0)) * (double)AudioFormat.SampleRate / AudioFormat.TicksPerSecond;
@@ -68,7 +80,8 @@ public class PlaybackSchedulerTests
                         _pcm[2 * i] = v;
                         _pcm[2 * i + 1] = v;
                     }
-                    Assert.True(Buffer.Insert(_next, PlayAt(_next) + PlayAtShift(_next), _pcm));
+                    bool stored = Buffer.Insert(_next, PlayAt(_next) + PlayAtShift(_next), _pcm);
+                    if (!AllowRejects) Assert.True(stored);
                 }
                 _next++;
             }
@@ -208,6 +221,26 @@ public class PlaybackSchedulerTests
         Assert.True(crossing > 0, "error never crossed zero");
         double overshoot = errors.Skip(crossing).Max(e => Math.Abs(e));
         Assert.True(overshoot < 12, $"overshoot after slew {overshoot:F1} samples ({overshoot / 48:F3} ms), bound 12 (0.25 ms)");
+    }
+
+    [Fact]
+    public void Starts_promptly_after_frames_piled_up_while_the_output_was_stopped()
+    {
+        // 1.5 s of frames arrive before the output starts: more than the buffer's 256 frames (1.28 s), so it fills
+        // up with frames that are long past due when the output finally runs.
+        var rig = new Rig { AllowRejects = true };
+        rig.Output.BeforeEachCallback = null;
+        rig.StartNetwork();
+        long start = Rig.T0 + (long)(1.5 * Second);
+        rig.Sim.Schedule(start, () => rig.Output.Start(rig.Scheduler));
+
+        rig.Sim.RunUntil(Rig.T0 + 4 * Second);
+
+        var first = rig.Output.Heard.FirstOrDefault(h => !double.IsNaN(h.StreamPos));
+        Assert.True(first != default, "never started playing");
+        Assert.True(first.TrueTicksHeard - start < Second / 2,
+            $"first audio heard {(first.TrueTicksHeard - start) / (double)Second:F3} s after the output started");
+        AssertTracks(rig, 2.5, h => Rig.Truth(h));
     }
 
     [Fact]

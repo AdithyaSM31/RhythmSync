@@ -136,6 +136,7 @@ public sealed class PlaybackScheduler : IRenderCallback
         {
             if (!IsAvailable(should))
             {
+                ReleaseBefore(should);
                 OutputSilence(stereo);
                 return;
             }
@@ -146,6 +147,7 @@ public sealed class PlaybackScheduler : IRenderCallback
         {
             if (should < _readPos)
             {
+                ReleaseBefore(should);
                 OutputSilence(stereo);
                 return;
             }
@@ -285,6 +287,18 @@ public sealed class PlaybackScheduler : IRenderCallback
     private void MarkConsumed()
     {
         long through = FrameOf(_readPos) - 2;
+        if (through >= 0 && through <= uint.MaxValue)
+            _buffer.MarkConsumedThrough((uint)through);
+    }
+
+    /// <summary>
+    /// While silent: frees frames that are already past due at <paramref name="should"/>. Without this, frames that
+    /// piled up while nothing was rendered (e.g. the output was down for over a second) would fill the buffer, every
+    /// newer frame would be refused, and the needed frame would never arrive.
+    /// </summary>
+    private void ReleaseBefore(double should)
+    {
+        long through = FrameOf(should) - 2;   // as in MarkConsumed: keep the frame before for the history tap
         if (through >= 0 && through <= uint.MaxValue)
             _buffer.MarkConsumedThrough((uint)through);
     }
