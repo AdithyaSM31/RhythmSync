@@ -208,31 +208,118 @@ public class HostPagesSmokeTests
         });
     }
 
+    // The page area at the 760x520 minimum window: 760 - 200 sidebar - 48 page margins wide, and about 440 tall under the title bar.
+    private const double MinPageWidth = 512;
+    private const double MinPageHeight = 440;
+
+    private static double NaturalWidth(string text, string style)
+    {
+        var probe = new TextBlock { Text = text, Style = (Style)Application.Current.FindResource(style) };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return probe.DesiredSize.Width;
+    }
+
+    private static double Left(FrameworkElement element, Visual root) => element.TransformToAncestor(root).Transform(new Point(0, 0)).X;
+
+    private static double Right(FrameworkElement element, Visual root) => Left(element, root) + element.ActualWidth;
+
     [Fact]
-    public void Long_names_ellipsize_at_minimum_size()
+    public void Long_client_names_ellipsize_but_normal_ones_are_not_squeezed_at_minimum_size()
+    {
+        UiDispatcher.Run(() =>
+        {
+            string normal = "Kitchen Laptop";
+            string longName = new('C', 64);
+            var host = NewHost();
+            // Degraded and congested is the widest row: the chip text is long and the warning is shown.
+            host.UpdateClients([Client(1, normal, SyncState.Degraded, latePct: 9), Client(2, longName, SyncState.Degraded, latePct: 9)]);
+            host.ShowStats = true;
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
+
+            var kitchen = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == normal);
+            Assert.True(kitchen.ActualWidth >= NaturalWidth(normal, "SubtitleText") - 0.5,
+                $"'{normal}' is squeezed to {kitchen.ActualWidth} (needs {NaturalWidth(normal, "SubtitleText")})");
+
+            var long64 = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == longName);
+            Assert.Equal(TextTrimming.CharacterEllipsis, long64.TextTrimming);
+            Assert.True(long64.ActualWidth < NaturalWidth(longName, "SubtitleText") - 50, "a 64-character name is trimmed");
+            Assert.True(long64.ActualWidth >= 120 - 0.5, "the name column keeps a floor");
+            var container = (FrameworkElement)VisualTreeHelper.GetParent(long64);
+            Assert.True(long64.ActualWidth <= container.ActualWidth + 0.5);
+
+            // The chip, the sync error and the warning of that row stay inside the card.
+            var card = Descendants<Border>(tab).First(b => Shown(b) && b.Style == Application.Current.FindResource("CardBorder")
+                && Descendants<TextBlock>(b).Any(t => t.Text == longName));
+            foreach (var t in Descendants<TextBlock>(card).Where(t => Shown(t) && t.ActualWidth > 0))
+                Assert.True(Right(t, card) <= card.ActualWidth + 0.5, $"'{t.Text}' sticks out of its card");
+            Assert.Equal(2, Descendants<TextBlock>(tab).Count(t => t.Text == ClientRowViewModel.CongestedMessage && Shown(t)));
+        });
+    }
+
+    [Fact]
+    public void Session_name_ellipsizes_while_the_chip_and_stop_button_stay_whole()
     {
         UiDispatcher.Run(() =>
         {
             string longSession = new('S', 64);
-            string longClient = new('C', 64);
-            var host = NewHost(longSession);
-            host.UpdateClients([Client(1, longClient, SyncState.InSync, latePct: 9)]);
-            var tab = NewTab(host, longSession);
-            UiDispatcher.Render(tab, 760, 520);
+            var tab = NewTab(NewHost(longSession), longSession);
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
 
-            foreach (string name in new[] { longSession, longClient })
-            {
-                var block = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == name);
-                Assert.Equal(TextTrimming.CharacterEllipsis, block.TextTrimming);
-                var container = (FrameworkElement)VisualTreeHelper.GetParent(block);
-                Assert.True(block.ActualWidth <= container.ActualWidth + 0.5,
-                    $"{name[0]}-name is {block.ActualWidth} wide inside {container.ActualWidth}");
-                Assert.True(block.ActualWidth < tab.ActualWidth - 100, "the name leaves room for the chip and the button");
-            }
+            var name = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == longSession);
+            Assert.Equal(TextTrimming.CharacterEllipsis, name.TextTrimming);
+            Assert.True(name.ActualWidth < NaturalWidth(longSession, "TitleText") - 50, "the name is trimmed");
+            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting);
+            var stop = Assert.Single(Descendants<Button>(tab), b => Equals(b.Content, "Stop hosting") && Shown(b));
 
-            // The right-hand controls stay on screen at the minimum size.
-            var stop = Assert.Single(Descendants<Button>(tab), b => Equals(b.Content, "Stop hosting"));
-            Assert.True(stop.TranslatePoint(new Point(stop.ActualWidth, 0), tab).X <= 760);
+            Assert.True(chip.ActualWidth > 40, "the chip is whole");
+            Assert.True(Right(name, tab) + 12 <= Left(chip, tab) + 0.5, "the chip follows the name");
+            Assert.True(Right(chip, tab) <= Left(stop, tab) + 0.5, "the chip ends before the Stop button");
+            Assert.True(Right(stop, tab) <= MinPageWidth + 0.5, "the Stop button is fully on screen");
+            Assert.True(stop.ActualWidth >= NaturalWidth("Stop hosting", "BodyText"), "the button shows its whole label");
+        });
+    }
+
+    [Fact]
+    public void Session_chip_sits_right_after_a_short_name_and_stop_is_alone_on_the_right()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var tab = NewTab(NewHost("Living Room"), "Living Room");
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
+
+            var name = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == "Living Room");
+            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting);
+            var stop = Assert.Single(Descendants<Button>(tab), b => Equals(b.Content, "Stop hosting") && Shown(b));
+
+            Assert.Equal(NaturalWidth("Living Room", "TitleText"), name.ActualWidth, 0.5);
+            Assert.Equal(Right(name, tab) + 12, Left(chip, tab), 0.5);   // right after the name
+            Assert.True(Left(stop, tab) - Right(chip, tab) > 50, "only the Stop button is pushed to the right");
+            Assert.Equal(MinPageWidth, Right(stop, tab), 0.5);
+        });
+    }
+
+    [Fact]
+    public void LeadingShrinkPanel_shrinks_only_its_first_child()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var first = new TextBlock { Text = new string('W', 40), TextTrimming = TextTrimming.CharacterEllipsis, Style = (Style)Application.Current.FindResource("BodyText") };
+            var second = new Border { Width = 70, Height = 10, Margin = new Thickness(12, 0, 0, 0) };
+            var panel = new LeadingShrinkPanel { Children = { first, second } };
+            var host = new Grid { Children = { panel } };
+            double natural = NaturalWidth(first.Text, "BodyText");
+            Assert.True(natural > 300);
+
+            UiDispatcher.Render(host, 300, 40);
+            Assert.InRange(first.ActualWidth, 200, 300 - 82 + 0.5);   // gave way
+            Assert.Equal(70, second.ActualWidth, 0.5);                  // whole, right after it
+            Assert.Equal(first.ActualWidth + 12, second.TranslatePoint(new Point(0, 0), panel).X, 0.5);
+            Assert.True(second.TranslatePoint(new Point(70, 0), panel).X <= 300.5);
+
+            UiDispatcher.Render(host, 600, 40);   // room for both: nothing shrinks, nothing is pushed away
+            Assert.Equal(natural, first.ActualWidth, 0.5);
+            Assert.Equal(natural + 12, second.TranslatePoint(new Point(0, 0), panel).X, 0.5);
         });
     }
 

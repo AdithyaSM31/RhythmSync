@@ -38,18 +38,19 @@
 
         <!-- While hosting: the fixed header, then the running host (which scrolls). -->
         <DockPanel Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
-            <!-- Name on the left (it ellipsizes), the status and the action grouped on the right. -->
+            <!-- The name trims first; the Hosting chip follows it and only the Stop button sits on the right. -->
             <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <!-- Display only: the name is edited in the settings card below. -->
-                <TextBlock Grid.Column="0" Text="{Binding Current.SessionName}" Style="{StaticResource TitleText}"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                <c:StatusChip Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Kind="Hosting" Text="Hosting" />
-                <Button Grid.Column="2" Content="Stop hosting" Command="{Binding StopCommand}"
+                <c:LeadingShrinkPanel Grid.Column="0">
+                    <!-- Display only: the name is edited in the settings card below. -->
+                    <TextBlock Text="{Binding Current.SessionName}" Style="{StaticResource TitleText}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <c:StatusChip Margin="12,0,0,0" VerticalAlignment="Center" Kind="Hosting" Text="Hosting" />
+                </c:LeadingShrinkPanel>
+                <Button Grid.Column="1" Content="Stop hosting" Command="{Binding StopCommand}" Margin="12,0,0,0"
                         Style="{StaticResource DangerButton}" Padding="14,7" />
             </Grid>
 

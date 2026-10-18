@@ -75,8 +75,7 @@
                             <StackPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" MinWidth="120" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
@@ -86,10 +85,10 @@
                                                   Kind="{Binding State, Converter={StaticResource SyncStateToKind}}" />
                                     <TextBlock Grid.Column="2" Text="{Binding SyncErrorText}" Style="{StaticResource StatText}"
                                                Margin="12,0,0,0" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="3" Text="{Binding CongestedText}" Style="{StaticResource OptionalText}"
-                                               FontSize="11" Foreground="{StaticResource WarningBrush}" TextAlignment="Right"
-                                               Margin="12,0,0,0" VerticalAlignment="Center" />
                                 </Grid>
+                                <!-- On its own line, so the warning never takes the name's room (it wraps when the window is narrow). -->
+                                <TextBlock Text="{Binding CongestedText}" Style="{StaticResource OptionalText}"
+                                           FontSize="11" Foreground="{StaticResource WarningBrush}" TextAlignment="Right" Margin="0,6,0,0" />
 
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
