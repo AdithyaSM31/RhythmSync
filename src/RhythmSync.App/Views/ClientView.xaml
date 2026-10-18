@@ -1,49 +1,155 @@
 <UserControl x:Class="RhythmSync.App.Views.ClientView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:RhythmSync.App.Controls"
              xmlns:vm="clr-namespace:RhythmSync.App.ViewModels">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="12">
-            <TextBlock Text="Hosts on this network" FontWeight="SemiBold" Margin="0,0,0,6" />
+    <!-- The Join page (spec 4.3). DataContext: a ClientViewModel. The shell shows the public-network and hosting banners above it. -->
+    <UserControl.Resources>
+        <!-- The selected host's ring: Accent at 20 % alpha (the same ring the pairing-code boxes use). -->
+        <SolidColorBrush x:Key="HostRingBrush" Color="{StaticResource AccentColor}" Opacity="0.2" />
+
+        <!-- The list is just a column of cards; the page scrolls, not the list. -->
+        <ControlTemplate x:Key="HostListTemplate" TargetType="ListBox">
+            <ItemsPresenter />
+        </ControlTemplate>
+
+        <Style x:Key="HostItem" TargetType="ListBoxItem">
+            <Setter Property="FocusVisualStyle" Value="{StaticResource StudioFocusVisual}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <!-- The ring always takes its 3 px so selecting a card never moves anything. -->
+                        <Border x:Name="Ring" CornerRadius="15" BorderThickness="3" BorderBrush="Transparent" SnapsToDevicePixels="True">
+                            <Border x:Name="Card" Style="{StaticResource CardBorder}" Padding="14,10">
+                                <ContentPresenter />
+                            </Border>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource RaisedBorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{StaticResource HostRingBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- The scroller starts 3 px to the left and the content is inset by the same amount, so a selected card's ring is not clipped. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="-3,0,0,0">
+        <StackPanel Margin="3,0,12,4">
+            <TextBlock Text="Join a host" Style="{StaticResource TitleText}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="Hosts on this network" Style="{StaticResource CaptionText}" Margin="0,14,0,8" />
+
             <ListBox ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost, Mode=TwoWay}"
-                     MinHeight="110" MaxHeight="180" AutomationProperties.Name="Hosts on this network">
+                     Template="{StaticResource HostListTemplate}" ItemContainerStyle="{StaticResource HostItem}"
+                     Background="Transparent" BorderThickness="0" Padding="0" Margin="-3,0"
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     AutomationProperties.Name="Hosts on this network">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Margin="2">
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding ControlEndPoint.Address}"
-                                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="&#xE701;" FontFamily="{StaticResource FontIcons}" FontSize="16"
+                                       Margin="0,0,12,0" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <!-- The name trims first; the address follows it and stays whole. -->
+                            <c:LeadingShrinkPanel Grid.Column="1">
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource SubtitleText}" TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding ControlEndPoint.Address}" Style="{StaticResource CaptionText}"
+                                           Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </c:LeadingShrinkPanel>
+                        </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
-            <TextBlock Text="{Binding HostListMessage}" Style="{StaticResource OptionalText}" Margin="0,6,0,0"
-                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+            <TextBlock Text="{Binding HostListMessage}" Style="{StaticResource OptionalText}" Foreground="{StaticResource TextMutedBrush}"
+                       FontSize="12" Margin="0,2,0,0" />
 
-            <DockPanel Margin="0,14,0,0" LastChildFill="False">
-                <TextBlock Text="Code" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left" />
-                <TextBox Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" MaxLength="4" Width="80" FontSize="18"
-                         HorizontalContentAlignment="Center" DockPanel.Dock="Left" AutomationProperties.Name="Pairing code" />
-                <Button Content="Join" Command="{Binding JoinCommand}" IsDefault="True" Width="80" Padding="0,5"
-                        DockPanel.Dock="Right" />
-            </DockPanel>
-            <TextBlock Text="{Binding ErrorText}" Style="{StaticResource OptionalText}" Foreground="#B00020" Margin="0,8,0,0" />
+            <!-- The 3 px margin leaves room for the focused box's ring, which the scroller would clip. -->
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Code" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <c:PinBox x:Name="Pin" Grid.Column="1" Code="{Binding Code}" HorizontalAlignment="Left" Margin="3"
+                          Submitted="OnPinSubmitted" AutomationProperties.Name="Pairing code" />
+                <Button Grid.Column="2" Content="Join" Command="{Binding JoinCommand}" IsDefault="True"
+                        Style="{StaticResource PrimaryButton}" Padding="22,10" VerticalAlignment="Center" Margin="12,0,0,0" />
+            </Grid>
+            <TextBlock Text="{Binding ErrorText}" Style="{StaticResource OptionalText}" Foreground="{StaticResource DangerBrush}" Margin="0,8,0,0" />
 
-            <Separator Margin="0,14" />
+            <!-- Shown while connected (joining, syncing, in sync or degraded). JoinedHostName can outlive a disconnect, so this is
+                 guarded by IsConnected and never by the name. -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,18,0,0"
+                    Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <c:LeadingShrinkPanel Grid.Column="0">
+                            <!-- "Joined" alone while the host's name is not known. -->
+                            <TextBlock Text="{Binding JoinedHostName, StringFormat='Joined · {0}', TargetNullValue='Joined'}"
+                                       Style="{StaticResource SubtitleText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <c:StatusChip Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding StatusText}"
+                                          Kind="{Binding State, Converter={StaticResource SyncStateToKind}}" />
+                        </c:LeadingShrinkPanel>
+                        <Button Grid.Column="1" Content="Leave" Command="{Binding LeaveCommand}" Margin="12,0,0,0"
+                                Style="{StaticResource SecondaryButton}" Padding="16,7" />
+                    </Grid>
 
-            <TextBlock Text="{Binding StatusText}" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource OptionalText}" Foreground="#B45F06" Margin="0,4,0,0" />
-            <TextBlock Text="{Binding SyncErrorText}" Margin="0,8,0,0" />
-            <TextBlock Text="{Binding DriftText}" />
-            <TextBlock Text="{Binding CountersText}" />
+                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource OptionalText}" Foreground="{StaticResource WarningBrush}"
+                               Margin="0,8,0,0" />
+                    <TextBlock Style="{StaticResource StatText}" TextWrapping="Wrap" Margin="0,8,0,0">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="{}{0} · {1} · {2}">
+                                <Binding Path="SyncErrorText" />
+                                <Binding Path="DriftText" />
+                                <Binding Path="CountersText" />
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
 
-            <!-- Read-only: the host is the single source of truth for this PC's volume and offset. -->
-            <TextBlock Text="{Binding VolumeText}" Margin="0,16,0,0" />
-            <TextBlock Text="{Binding OffsetText}" Margin="0,4,0,0" />
-            <TextBlock Text="{x:Static vm:ClientViewModel.SetOnHostText}" Margin="0,2,0,0"
-                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-
-            <Button Content="Leave" Command="{Binding LeaveCommand}" HorizontalAlignment="Left" Width="80" Padding="0,5" Margin="0,16,0,0" />
+                    <!-- Read-only: the host is the single source of truth for this PC's volume and offset. -->
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding VolumeText}" Style="{StaticResource CaptionText}" />
+                            <TextBlock Text="·" Style="{StaticResource CaptionText}" Margin="6,0" />
+                            <TextBlock Text="{Binding OffsetText}" Style="{StaticResource CaptionText}" />
+                        </WrapPanel>
+                        <TextBlock Grid.Column="1" Text="{x:Static vm:ClientViewModel.SetOnHostText}" Style="{StaticResource CaptionText}"
+                                   FontStyle="Italic" Margin="12,0,0,0" VerticalAlignment="Center" />
+                    </Grid>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
