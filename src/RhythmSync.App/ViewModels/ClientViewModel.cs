@@ -86,6 +86,10 @@ public sealed partial class ClientViewModel : ObservableObject
     [ObservableProperty]
     private bool _isJoining;
 
+    /// <summary>The name of the host this PC joined; null before a successful join, after leaving, and once the session is disconnected.</summary>
+    [ObservableProperty]
+    private string? _joinedHostName;
+
     /// <summary>Why the host list is empty or unavailable; null while hosts are listed.</summary>
     public string? HostListMessage => HostsUnavailable ? HostsUnavailableText : Hosts.Count == 0 ? SearchingText : null;
 
@@ -142,6 +146,7 @@ public sealed partial class ClientViewModel : ObservableObject
             switch (result.Outcome)
             {
                 case JoinOutcome.Joined:
+                    JoinedHostName = host.Name;
                     Joined?.Invoke(host, code);
                     break;
                 case JoinOutcome.Rejected:
@@ -197,6 +202,8 @@ public sealed partial class ClientViewModel : ObservableObject
 
     partial void OnStateChanged(SyncState value)
     {
+        if (value == SyncState.Disconnected) JoinedHostName = null;   // e.g. a reconnect gave up
+
         // Playback works, so output failures counted so far are history.
         if (value != SyncState.InSync) return;
         _outputFailures = _control?.OutputFailures ?? _outputFailures;
@@ -232,7 +239,11 @@ public sealed partial class ClientViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanLeave))]
     private async Task LeaveAsync()
     {
-        try { await _control!.LeaveAsync(); }
+        try
+        {
+            await _control!.LeaveAsync();
+            JoinedHostName = null;
+        }
         catch (Exception e) { Log.Warning(e, "Leaving the session failed"); }
     }
 

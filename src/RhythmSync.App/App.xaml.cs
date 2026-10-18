@@ -107,7 +107,7 @@ public partial class App : Application
 
         _host = new HostRuntime(new WindowsHostEnvironment(), clock, _settings, post, client.ReleaseAsync, client.Allow);
         var hostTab = new HostTabViewModel(_host, _settings.Current.DeviceName);
-        _main = new MainViewModel(clientVm, post, hostTab);
+        _main = new MainViewModel(clientVm, post, hostTab) { SelectedPage = MainViewModel.InitialPage(_settings.Current.LastHostName) };
 
         StartListener(clientVm, clock);
 

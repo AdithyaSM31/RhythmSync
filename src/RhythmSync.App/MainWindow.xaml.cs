@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using RhythmSync.App.Shell;
 
 namespace RhythmSync.App;
 
@@ -8,6 +9,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        WindowChromeHelper.Attach(this, TitleBarPart.MaximizeButton);   // snap layouts and the dark frame, once there is a handle
     }
 
     /// <summary>False while the app runs: closing the window only hides it to the tray. Set when the app quits.</summary>

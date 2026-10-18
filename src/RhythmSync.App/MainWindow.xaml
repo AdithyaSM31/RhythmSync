@@ -2,35 +2,120 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:RhythmSync.App.Views"
-        Title="RhythmSync" Width="460" Height="680" MinWidth="380" MinHeight="520"
+        xmlns:vm="clr-namespace:RhythmSync.App.ViewModels"
+        xmlns:shell="clr-namespace:RhythmSync.App.Shell"
+        xmlns:c="clr-namespace:RhythmSync.App.Controls"
+        Style="{StaticResource StudioWindow}"
+        Title="RhythmSync" Width="960" Height="640" MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterScreen">
-    <DockPanel>
-        <Border DockPanel.Dock="Top" Background="#FFF4CE" Padding="12,8"
-                Visibility="{Binding ShowPublicNetworkWarning, Converter={StaticResource BoolToVisibility}}">
-            <TextBlock Text="{Binding PublicNetworkWarningText}" TextWrapping="Wrap" Foreground="#3B2F00" />
+    <!-- The shell (spec §3): a custom dark title bar, the sidebar (Host · Join · Settings and the status footer) and the page area. -->
+    <WindowChrome.WindowChrome>
+        <!-- One glass pixel keeps the DWM shadow; Windows 11 keeps its rounded corners. -->
+        <WindowChrome CaptionHeight="32" ResizeBorderThickness="6" UseAeroCaptionButtons="False" GlassFrameThickness="0,0,0,1" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <shell:PageIsSelectedConverter x:Key="PageIsSelected" />
+
+        <DataTemplate x:Key="HostPage">
+            <views:HostTabView DataContext="{Binding Host}" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="JoinPage">
+            <DockPanel>
+                <c:Banner DockPanel.Dock="Top" Margin="0,0,0,8" Message="{Binding PublicNetworkWarningText}"
+                          Visibility="{Binding ShowPublicNetworkWarning, Converter={StaticResource BoolToVisibility}}" />
+                <c:Banner DockPanel.Dock="Top" Margin="0,0,0,8" Severity="Info"
+                          Message="This PC is hosting – stop hosting to join another host.">
+                    <c:Banner.Style>
+                        <Style TargetType="c:Banner" BasedOn="{StaticResource {x:Type c:Banner}}">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ClientEnabled}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </c:Banner.Style>
+                </c:Banner>
+                <!-- Disabled while this PC is hosting. -->
+                <Border IsEnabled="{Binding ClientEnabled}">
+                    <views:ClientView DataContext="{Binding Client}" />
+                </Border>
+            </DockPanel>
+        </DataTemplate>
+
+        <!-- A placeholder until the Settings page lands. -->
+        <DataTemplate x:Key="SettingsPage">
+            <TextBlock Text="Settings" Style="{StaticResource TitleText}" />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Style.Triggers>
+                    <!-- A maximized custom-chrome window overhangs the screen by its resize frame. -->
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="Margin" Value="{x:Static SystemParameters.WindowResizeBorderThickness}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <shell:TitleBar x:Name="TitleBarPart" Grid.Row="0" Grid.ColumnSpan="2" />
+
+        <!-- Sidebar -->
+        <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,1,0" Padding="12">
+            <!-- Rows in visual order, so Tab follows it: Host and Join at the top, Settings and the status footer at the bottom. -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0">
+                    <RadioButton GroupName="Pages" Style="{StaticResource NavItem}"
+                                 Tag="&#xE7F5;" Content="Host" AutomationProperties.Name="Host"
+                                 IsChecked="{Binding SelectedPage, Converter={StaticResource PageIsSelected}, ConverterParameter={x:Static vm:Page.Host}}" />
+                    <RadioButton GroupName="Pages" Style="{StaticResource NavItem}"
+                                 Tag="&#xE71B;" Content="Join" AutomationProperties.Name="Join"
+                                 IsChecked="{Binding SelectedPage, Converter={StaticResource PageIsSelected}, ConverterParameter={x:Static vm:Page.Join}}" />
+                </StackPanel>
+                <RadioButton Grid.Row="2" GroupName="Pages" Style="{StaticResource NavItem}"
+                             Tag="&#xE713;" Content="Settings" AutomationProperties.Name="Settings"
+                             IsChecked="{Binding SelectedPage, Converter={StaticResource PageIsSelected}, ConverterParameter={x:Static vm:Page.Settings}}" />
+                <Border Grid.Row="3" Style="{StaticResource CardBorder}" Padding="12,10" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding FooterText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                </Border>
+            </Grid>
         </Border>
-        <TabControl Margin="8">
-            <TabItem Header="Client">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Margin="12,8,12,0" TextWrapping="Wrap"
-                               Text="This PC is hosting – stop hosting to join another host.">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ClientEnabled}" Value="False">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <views:ClientView DataContext="{Binding Client}" IsEnabled="{Binding DataContext.ClientEnabled, RelativeSource={RelativeSource AncestorType=Window}}" />
-                </DockPanel>
-            </TabItem>
-            <TabItem Header="Host">
-                <views:HostTabView DataContext="{Binding Host}" />
-            </TabItem>
-        </TabControl>
-    </DockPanel>
+
+        <!-- Page area: the selected page's template, with the MainViewModel as its data. -->
+        <ContentControl Grid.Row="1" Grid.Column="1" Margin="24,16" Content="{Binding}" Focusable="False">
+            <ContentControl.Style>
+                <Style TargetType="ContentControl">
+                    <Setter Property="ContentTemplate" Value="{StaticResource HostPage}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedPage}" Value="{x:Static vm:Page.Join}">
+                            <Setter Property="ContentTemplate" Value="{StaticResource JoinPage}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding SelectedPage}" Value="{x:Static vm:Page.Settings}">
+                            <Setter Property="ContentTemplate" Value="{StaticResource SettingsPage}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ContentControl.Style>
+        </ContentControl>
+    </Grid>
 </Window>
