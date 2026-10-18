@@ -21,6 +21,7 @@ public partial class App : Application
     private static readonly TimeSpan UiRefreshInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan NetworkCheckInterval = TimeSpan.FromSeconds(15);
 
+    private SingleInstanceCoordinator? _instance;
     private SettingsPersister _settings = null!;
     private MainWindow _window = null!;
     private MainViewModel _main = null!;
@@ -38,6 +39,27 @@ public partial class App : Application
     {
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        // One instance per user session: a second launch shows the first one's window and exits before touching
+        // the log, settings, sockets or the tray.
+        _instance = new SingleInstanceCoordinator(new NamedSingleInstanceGate());
+        bool first;
+        try
+        {
+            first = _instance.Claim(() => Dispatcher.BeginInvoke(() => _window?.ShowAndActivate()));
+        }
+        catch (Exception ex)
+        {
+            first = true;   // the check itself failed: better to run than to refuse to start
+            System.Diagnostics.Trace.WriteLine($"RhythmSync single-instance check failed: {ex}");
+        }
+        if (!first)
+        {
+            _instance.Dispose();
+            _instance = null;
+            Shutdown(0);
+            return;
+        }
 
         string dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RhythmSync");
         ConfigureLogging(dataDir);
@@ -187,6 +209,7 @@ public partial class App : Application
         Step("discovery listener", () => _listener?.Dispose());
         Step("settings", () => _settings?.Dispose());   // writes anything still pending
         Step("tray", () => _tray?.Dispose());
+        Step("single instance", () => _instance?.Dispose());
 
         _window.AllowClose = true;
         Log.CloseAndFlush();

@@ -8,7 +8,10 @@ using RhythmSync.Core.Protocol;
 
 namespace RhythmSync.Core.Client;
 
-/// <param name="AudioPort">UDP port for the audio stream; 0 binds an ephemeral port (its actual number goes in Hello).</param>
+/// <param name="AudioPort">
+/// Preferred UDP port for the audio stream; 0, or a port another program holds, binds an ephemeral port (the port
+/// actually bound goes in Hello, so the host sends there).
+/// </param>
 public sealed record ClientSessionOptions(Guid DeviceId, string DeviceName, int AudioPort = 47802);
 
 public enum JoinOutcome { Joined, Rejected, Unreachable }
@@ -561,7 +564,16 @@ public sealed class ClientSession : IAsyncDisposable
     private void EnsureAudioChannelLocked()
     {
         if (_audioChannel is not null) return;
-        var channel = _channels.Create(new IPEndPoint(IPAddress.Any, _options.AudioPort));
+        IDatagramChannel channel;
+        try
+        {
+            channel = _channels.Create(new IPEndPoint(IPAddress.Any, _options.AudioPort));
+        }
+        catch (SocketException) when (_options.AudioPort != 0)
+        {
+            // Taken (e.g. by another RhythmSync on this PC): any port works, Hello tells the host which one.
+            channel = _channels.Create(new IPEndPoint(IPAddress.Any, 0));
+        }
         try
         {
             channel.Start(OnAudioDatagram);

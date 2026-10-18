@@ -283,6 +283,37 @@ public class ClientSessionTests
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(2), () => rig);
     }
 
+    /// <summary>Real UDP channels, except that binding <paramref name="takenPort"/> fails as if another program held it.</summary>
+    private sealed class PortTakenChannels(int takenPort) : IDatagramChannelFactory
+    {
+        public readonly ConcurrentQueue<IPEndPoint> Bound = new();
+
+        public IDatagramChannel Create(IPEndPoint bind, bool broadcast = false)
+        {
+            if (bind.Port == takenPort) throw new SocketException((int)SocketError.AddressAlreadyInUse);
+            var channel = Channels.Create(bind, broadcast);
+            Bound.Enqueue(channel.LocalEndPoint);
+            return channel;
+        }
+    }
+
+    [Fact]
+    public async Task A_taken_audio_port_falls_back_to_an_ephemeral_one_and_the_hello_carries_it()
+    {
+        await using var rig = await HostRig.StartAsync();
+        const int taken = 47802;   // e.g. a second RhythmSync on this PC
+        var channels = new PortTakenChannels(taken);
+        await using var client = new ClientSession(new ClientSessionOptions(Guid.NewGuid(), "Laptop", AudioPort: taken),
+                                                   new StopwatchClock(), channels, new FakeOutputFactory());
+
+        var result = await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+
+        Assert.Equal(JoinOutcome.Joined, result.Outcome);
+        Assert.True(channels.Bound.TryPeek(out var audio));   // the audio channel is bound first
+        Assert.NotEqual(taken, audio!.Port);
+        Assert.Equal(audio.Port, Assert.Single(rig.Host.Clients).AudioEndPoint.Port);
+    }
+
     [Fact]
     public async Task Heartbeats_carry_stats_to_the_host()
     {
