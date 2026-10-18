@@ -1,0 +1,70 @@
+<!--
+    StatusChip (spec §2.3): a pill with a 7 px dot and a label. The base look is NotConnected; the triggers below
+    restyle it per Kind. Fills are the status colour at 12-14 % alpha, taken from the token colours.
+    InSync and Hosting get a Teal glow on the dot; the Syncing pulse is started from StatusChip.cs.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:c="clr-namespace:RhythmSync.App.Controls">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <SolidColorBrush x:Key="ChipTealTint" Color="{StaticResource TealColor}" Opacity="0.13" />
+    <SolidColorBrush x:Key="ChipAccentTint" Color="{StaticResource AccentColor}" Opacity="0.14" />
+    <SolidColorBrush x:Key="ChipWarningTint" Color="{StaticResource WarningColor}" Opacity="0.13" />
+    <SolidColorBrush x:Key="ChipDangerTint" Color="{StaticResource DangerColor}" Opacity="0.12" />
+    <SolidColorBrush x:Key="ChipDangerText" Color="#FF8B97" />
+
+    <DropShadowEffect x:Key="ChipTealGlow" Color="{StaticResource TealColor}" BlurRadius="8" ShadowDepth="0" Opacity="1" />
+
+    <Style TargetType="c:StatusChip">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="c:StatusChip">
+                    <Border x:Name="Pill" Background="{StaticResource ChipDangerTint}" CornerRadius="{StaticResource RadiusPill}"
+                            Padding="10,3" SnapsToDevicePixels="True">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="PART_Dot" Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center"
+                                     Fill="{StaticResource DangerBrush}" />
+                            <TextBlock x:Name="Label" Text="{TemplateBinding Text}" VerticalAlignment="Center"
+                                       FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource ChipDangerText}" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Kind" Value="InSync">
+                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource ChipTealTint}" />
+                            <Setter TargetName="PART_Dot" Property="Fill" Value="{StaticResource TealBrush}" />
+                            <Setter TargetName="PART_Dot" Property="Effect" Value="{StaticResource ChipTealGlow}" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource TealBrush}" />
+                        </Trigger>
+                        <Trigger Property="Kind" Value="Hosting">
+                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource ChipTealTint}" />
+                            <Setter TargetName="PART_Dot" Property="Fill" Value="{StaticResource TealBrush}" />
+                            <Setter TargetName="PART_Dot" Property="Effect" Value="{StaticResource ChipTealGlow}" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource TealBrush}" />
+                        </Trigger>
+                        <Trigger Property="Kind" Value="Syncing">
+                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource ChipAccentTint}" />
+                            <Setter TargetName="PART_Dot" Property="Fill" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource AccentSoftBrush}" />
+                        </Trigger>
+                        <Trigger Property="Kind" Value="Degraded">
+                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource ChipWarningTint}" />
+                            <Setter TargetName="PART_Dot" Property="Fill" Value="{StaticResource WarningBrush}" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource WarningBrush}" />
+                        </Trigger>
+                        <Trigger Property="Kind" Value="Connecting">
+                            <Setter TargetName="Pill" Property="Background" Value="{StaticResource RaisedBrush}" />
+                            <Setter TargetName="PART_Dot" Property="Fill" Value="{StaticResource TextMutedBrush}" />
+                            <Setter TargetName="Label" Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

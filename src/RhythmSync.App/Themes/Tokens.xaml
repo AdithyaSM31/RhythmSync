@@ -45,6 +45,9 @@
     <CornerRadius x:Key="RadiusSmall">6</CornerRadius>
     <CornerRadius x:Key="RadiusPill">12</CornerRadius>
 
+    <!-- Motion: one full cycle of the Syncing chip pulse (opacity 1 to 0.5 and back). -->
+    <Duration x:Key="PulseDuration">0:0:1.6</Duration>
+
     <!-- Fonts (each falls back to the next family when the first is missing) -->
     <FontFamily x:Key="FontUi">Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="FontMono">Cascadia Mono, Consolas</FontFamily>

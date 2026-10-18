@@ -16,6 +16,8 @@
         <ResourceDictionary Source="ScrollBar.xaml" />
         <ResourceDictionary Source="NavItem.xaml" />
         <ResourceDictionary Source="Card.xaml" />
+        <ResourceDictionary Source="StatusChip.xaml" />
+        <ResourceDictionary Source="Banner.xaml" />
     </ResourceDictionary.MergedDictionaries>
 
     <Style x:Key="StudioWindow" TargetType="Window">
