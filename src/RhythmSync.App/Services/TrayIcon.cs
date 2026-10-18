@@ -11,12 +11,14 @@ public sealed class TrayIcon : IDisposable
 
     private readonly System.Windows.Forms.NotifyIcon _icon;
     private readonly System.Windows.Forms.ToolStripMenuItem _status;
+    private readonly System.Drawing.Icon _appIcon;   // owned here: a NotifyIcon does not dispose its Icon
 
     public TrayIcon(Action toggleWindow, Action quit)
     {
         ArgumentNullException.ThrowIfNull(toggleWindow);
         ArgumentNullException.ThrowIfNull(quit);
 
+        _appIcon = AppIcon.Load(System.Windows.Forms.SystemInformation.SmallIconSize);
         _status = new System.Windows.Forms.ToolStripMenuItem("RhythmSync") { Enabled = false };
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Show/Hide", null, (_, _) => toggleWindow());
@@ -26,7 +28,7 @@ public sealed class TrayIcon : IDisposable
 
         _icon = new System.Windows.Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,   // shared system icon, not disposed here
+            Icon = _appIcon,
             Text = "RhythmSync",
             ContextMenuStrip = menu,
             Visible = true,
@@ -59,5 +61,6 @@ public sealed class TrayIcon : IDisposable
         _icon.Visible = false;
         _icon.ContextMenuStrip?.Dispose();
         _icon.Dispose();
+        _appIcon.Dispose();
     }
 }

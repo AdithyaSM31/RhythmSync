@@ -117,9 +117,11 @@ public sealed class MainWindowSmokeTests : IDisposable
                 Assert.True(WindowChrome.GetIsHitTestVisibleInChrome(button), $"{name} is not clickable in the caption");
             }
             Assert.Contains(Descendants<TextBlock>(window), t => t.Text == "RhythmSync");
-            // The app glyph is decorative: no name of its own, so the title is not read twice.
-            var glyph = Assert.Single(Descendants<TextBlock>(window), t => t.Text == "");
-            Assert.Equal("", AutomationProperties.GetName(glyph));
+            // The logo is decorative: no name of its own, so the title is not read twice.
+            var logo = Assert.Single(Descendants<Image>(window));
+            Assert.Equal("", AutomationProperties.GetName(logo));
+            Assert.NotNull(logo.Source);
+            Assert.NotNull(window.Icon);
         });
     }
 

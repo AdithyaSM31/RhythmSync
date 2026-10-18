@@ -71,4 +71,36 @@ public class ViewMarkupTests
         Assert.Contains(view.Descendants(Wpf + "TextBlock"), t => (string?)t.Attribute("Text") == "{Binding OffsetText}");
         Assert.Contains(view.Descendants(Wpf + "TextBlock"), t => ((string?)t.Attribute("Text"))?.Contains("SetOnHostText") == true);
     }
+
+    private static XDocument LoadAppXaml(string relativePath, [CallerFilePath] string here = "")
+    {
+        string repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", ".."));
+        return XDocument.Load(Path.Combine(repo, "src", "RhythmSync.App", relativePath));
+    }
+
+    private const string LogoUri = "pack://application:,,,/RhythmSync;component/Assets/RhythmSync.ico";
+
+    [Fact]
+    public void The_title_bar_shows_the_logo_image_instead_of_the_font_glyph()
+    {
+        var titleBar = LoadAppXaml(Path.Combine("Shell", "TitleBar.xaml"));
+
+        var logo = Assert.Single(titleBar.Descendants(Wpf + "Image"));
+        Assert.Equal(LogoUri, (string?)logo.Attribute("Source"));
+        Assert.Equal("16", (string?)logo.Attribute("Width"));
+        Assert.Equal("16", (string?)logo.Attribute("Height"));
+        Assert.Equal("HighQuality", (string?)logo.Attribute("RenderOptions.BitmapScalingMode"));
+        // Decorative: an empty automation name, so screen readers do not read the title twice.
+        Assert.Equal("", (string?)logo.Attribute("AutomationProperties.Name"));
+
+        Assert.DoesNotContain(titleBar.Descendants(Wpf + "TextBlock"), t => ((string?)t.Attribute("Text"))?.Contains("E8D6", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void The_main_window_uses_the_logo_as_its_icon()
+    {
+        var window = LoadAppXaml("MainWindow.xaml");
+
+        Assert.Equal(LogoUri, (string?)window.Root!.Attribute("Icon"));
+    }
 }

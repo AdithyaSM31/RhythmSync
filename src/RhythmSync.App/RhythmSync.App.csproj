@@ -7,6 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>RhythmSync.App</RootNamespace>
     <AssemblyName>RhythmSync</AssemblyName>
+    <ApplicationIcon>Assets\RhythmSync.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +18,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="RhythmSync.App.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The logo: the exe icon (ApplicationIcon) and, as a WPF resource, the window, title-bar and tray icon via pack://application:,,,/RhythmSync;component/Assets/RhythmSync.ico. -->
+    <Resource Include="Assets\RhythmSync.ico" />
   </ItemGroup>
 
   <ItemGroup>

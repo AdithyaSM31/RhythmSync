@@ -7,6 +7,7 @@
         xmlns:c="clr-namespace:RhythmSync.App.Controls"
         Style="{StaticResource StudioWindow}"
         Title="RhythmSync" Width="960" Height="640" MinWidth="760" MinHeight="520"
+        Icon="pack://application:,,,/RhythmSync;component/Assets/RhythmSync.ico"
         WindowStartupLocation="CenterScreen">
     <!-- The shell (spec §3): a custom dark title bar, the sidebar (Host · Join · Settings and the status footer) and the page area. -->
     <WindowChrome.WindowChrome>
