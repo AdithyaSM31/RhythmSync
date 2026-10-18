@@ -199,6 +199,149 @@ public class ControlSmokeTests
         });
     }
 
+    private sealed class FakeViewModel : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _code = "";
+
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+        public string Code
+        {
+            get => _code;
+            set
+            {
+                _code = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(Code)));
+            }
+        }
+    }
+
+    private static TextBox DigitBox(PinBox pin, int index) => Assert.IsType<TextBox>(pin.FindName($"Box{index}"));
+
+    private static string Digits(PinBox pin) => string.Concat(Enumerable.Range(0, 4).Select(i => DigitBox(pin, i).Text));
+
+    [Fact]
+    public void PinBox_round_trips_code_with_a_view_model()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var vm = new FakeViewModel();
+            var pin = new PinBox();
+            pin.SetBinding(PinBox.CodeProperty, new System.Windows.Data.Binding(nameof(FakeViewModel.Code)) { Source = vm });
+            var host = RenderInHost(pin, 240, 80);
+
+            for (int i = 0; i < 4; i++)
+            {
+                Assert.Equal($"Pairing code digit {i + 1}", AutomationProperties.GetName(DigitBox(pin, i)));
+                Assert.Equal("", DigitBox(pin, i).Text);
+            }
+
+            vm.Code = "4729";   // view model to boxes
+            UiDispatcher.Render(host, 240, 80);
+            Assert.Equal("4729", Digits(pin));
+            Assert.Equal("4", DigitBox(pin, 0).Text);
+            Assert.Equal("9", DigitBox(pin, 3).Text);
+
+            Assert.True(pin.HandleKey(Key.Back));   // boxes to view model
+            Assert.Equal("472", vm.Code);
+            Assert.Equal("472", Digits(pin));
+            pin.HandleText("x");   // ignored
+            pin.HandleText("1");
+            Assert.Equal("4721", vm.Code);
+            Assert.Equal("4721", Digits(pin));
+
+            pin.HandlePaste("88-1");
+            Assert.Equal("881", vm.Code);
+            Assert.Equal("881", Digits(pin));
+
+            vm.Code = "12a3456";   // the view model's value is filtered like a paste, and the filtered value is written back
+            UiDispatcher.Render(host, 240, 80);
+            Assert.Equal("1234", Digits(pin));
+            Assert.Equal("1234", vm.Code);
+
+            vm.Code = "";
+            UiDispatcher.Render(host, 240, 80);
+            Assert.Equal("", Digits(pin));
+
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void PinBox_arrows_move_within_the_filled_range_and_keep_the_code()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var pin = new PinBox();
+            RenderInHost(pin, 240, 80);
+            pin.HandlePaste("4729");
+            Assert.Equal(3, pin.FocusedIndex);
+
+            Assert.True(pin.HandleKey(Key.Left));
+            Assert.True(pin.HandleKey(Key.Left));
+            Assert.Equal(1, pin.FocusedIndex);
+            Assert.Equal("4729", pin.Code);
+
+            pin.HandleText("8");
+            Assert.Equal("4829", pin.Code);
+            Assert.Equal(2, pin.FocusedIndex);
+
+            Assert.True(pin.HandleKey(Key.Right));
+            Assert.True(pin.HandleKey(Key.Right));
+            Assert.Equal(3, pin.FocusedIndex);
+            Assert.False(pin.HandleKey(Key.A));
+        });
+    }
+
+    [Fact]
+    public void PinBox_raises_submitted_only_when_complete()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var pin = new PinBox();
+            RenderInHost(pin, 240, 80);
+            int submitted = 0;
+            pin.Submitted += (_, _) => submitted++;
+
+            pin.HandleText("472");
+            Assert.False(pin.HandleKey(Key.Enter));
+            Assert.Equal(0, submitted);
+
+            pin.HandleText("9");
+            Assert.True(pin.HandleKey(Key.Enter));
+            Assert.Equal(1, submitted);
+
+            pin.HandleKey(Key.Back);
+            Assert.False(pin.HandleKey(Key.Enter));
+            Assert.Equal(1, submitted);
+        });
+    }
+
+    [Fact]
+    public void PinBox_boxes_are_40_by_48_cards_with_an_accent_ring_for_focus()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var pin = new PinBox();
+            RenderInHost(pin, 240, 80);
+            var box = DigitBox(pin, 0);
+            Assert.Equal(40, box.Width);
+            Assert.Equal(48, box.Height);
+            Assert.Equal(Token("CardBrush"), ColorOf(box.Background));
+            Assert.Equal(Token("CardBorderBrush"), ColorOf(box.BorderBrush));
+
+            // The ring and accent border are drawn only while the box has keyboard focus (nothing has it here).
+            var ring = Part<Border>(box, "Ring");
+            Assert.Equal(Visibility.Hidden, ring.Visibility);
+            var ringBrush = Assert.IsType<SolidColorBrush>(ring.BorderBrush);
+            Assert.Equal(Token("AccentBrush"), ringBrush.Color);
+            Assert.Equal(0.2, ringBrush.Opacity);
+            Assert.Equal(3, ring.BorderThickness.Left);
+            Assert.Equal(Visibility.Hidden, Part<Border>(box, "FocusBorder").Visibility);
+        });
+    }
+
     private sealed class RelayCommand(Action execute) : ICommand
     {
         public event EventHandler? CanExecuteChanged { add { } remove { } }
