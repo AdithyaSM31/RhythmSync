@@ -46,20 +46,26 @@ Without a rule, other PCs may not be able to reach the host.
 
 1. Install VB-CABLE and reboot if the installer asks.
 2. In Windows sound settings, set **CABLE Input** as the default playback device.
-3. In RhythmSync, open the **Host** tab, choose your real speakers or headphones under "Play on this PC through" (not CABLE Input), and click **Start hosting**.
+3. In RhythmSync, open the **Host** tab, choose your real speakers or headphones under "Play on this PC through", and click **Start hosting**. CABLE Input is not in that list. You can change the speakers on the running Host screen too.
 4. The Host screen shows a 4-digit pairing code. The banner on that screen tells you if VB-CABLE is missing or is not the default device, and has an "Open sound settings" button.
 
-The host plays its own audio through the same synchronised path as the clients, so the host's speakers are delayed by the target latency like everyone else's.
+When VB-CABLE is installed, the host always captures the CABLE Input device itself (by its id), whatever the default device is. It plays on this PC's speakers only when CABLE Input is the default device and real speakers are chosen: then everything this PC plays goes into the cable, is streamed, and comes back out of the speakers through the same synchronised path as on the clients, so the host's speakers are delayed by the target latency like everyone else's. If CABLE Input is not the default, the host still streams whatever plays into the cable but does not play locally, and the banner says so. Without VB-CABLE the host captures the default device and only sends (mute its speakers).
+
+Changing the default playback device while hosting does not restart the session: the banner updates and local playback starts or stops within about a second. Only losing the captured device (for example disabling or removing CABLE Input) restarts the host session; clients reconnect on their own after a few seconds of silence.
 
 ## Joining as a client
 
 Open the **Client** tab, pick the host from the list, enter the 4-digit code and click **Join**. A client should be playing within about 10 seconds. The tab is disabled while the PC is hosting.
 
-The target latency (default 200 ms, 100 to 500 ms) is set on the host. Raise it on a weak Wi-Fi connection. Each client has its own volume and an offset slider (plus or minus 100 ms).
+The target latency (default 200 ms, 100 to 500 ms) is set on the host. Raise it on a weak Wi-Fi connection. Each client's volume and offset (plus or minus 100 ms) are set on the host, in that client's row; the host remembers them per PC and sends them every time the PC joins. The Client tab shows them read-only ("Set on the host").
+
+Only one RhythmSync runs per Windows user. Starting it again brings the running window to the front.
 
 ## Tuning the offset
 
-The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and move the offset slider on a client (Client tab, or that client's row on the host) until its clicks line up with the host's. The host's own speakers have a fixed offset of 0 and no slider, so tune each client against the host. Automatic calibration is planned as sub-project 3.
+The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and move the offset slider in that client's row on the host until its clicks line up with the host's. The host's own speakers have a fixed offset of 0 and no slider, so tune each client against the host. Automatic calibration is planned as sub-project 3.
+
+An offset change of more than 2 ms takes effect at once, with one short resync (a brief fade out and in) on that client. Smaller nudges are slewed in without a fade, at up to 0.5 ms per second. Latency changes work the same way in reverse: a step of more than 20 ms resyncs once, a smaller one (a single 10 ms key press on the latency slider) settles gradually over about 20 seconds.
 
 ## Ports
 
@@ -70,7 +76,7 @@ The app does not yet measure how long each PC's output path takes (sound card, D
 | UDP 47802 | Audio |
 | UDP 47803 | Clock sync |
 
-If 47802 or 47803 is taken, the audio and clock ports fall back to ephemeral ports. If 47801 is taken, hosting does not start and the Host tab says so.
+If 47802 or 47803 is taken, the audio and clock ports fall back to ephemeral ports (on the host, and for the client's audio port too). If 47801 is taken, hosting does not start and the Host tab says so.
 
 ## Files
 
@@ -82,9 +88,9 @@ If 47802 or 47803 is taken, the audio and clock ports fall back to ephemeral por
 - Traffic is not encrypted. Anyone on the LAN can listen to the stream.
 - Windows only.
 - Bluetooth speakers are not supported for same-room sync; their latency is large and varies.
-- The pairing code is 4 digits. Three wrong codes from one device id lock it out for 30 seconds, but an attacker on the LAN can change device ids and keep guessing.
-- If the host's default playback device changes while hosting, the host restarts its session; clients reconnect after a few seconds of silence.
-- Each PC's output latency is not measured automatically; use the offset slider.
+- The pairing code is 4 digits. Three wrong codes from one device id lock that device out for 30 seconds, and more than 10 wrong codes within 30 seconds from any devices lock out every join for 30 seconds. That slows guessing to about 11 codes per 30 seconds, so finding the code takes hours, but someone on the LAN can still find it eventually, and can keep honest PCs from joining while they try.
+- If the captured device (CABLE Input, or the default device without VB-CABLE) is lost while hosting, the host restarts its session; clients reconnect after a few seconds of silence.
+- Each PC's output latency is not measured automatically; use the offset slider on the host.
 - Maximum 8 clients per host. The design target is 2 to 4 PCs.
 
 ## Acceptance testing
