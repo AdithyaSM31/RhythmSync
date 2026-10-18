@@ -23,8 +23,9 @@
                      AutomationProperties.Name="Session name" />
 
             <TextBlock Text="{Binding LatencyText}" Margin="0,14,0,0" />
+            <!-- Delay: a drag (or a run of key presses) commits once, 300 ms after it stops, not at every 10 ms step. -->
             <Slider Minimum="100" Maximum="500" TickFrequency="10" IsSnapToTickEnabled="True" SmallChange="10" LargeChange="50"
-                    Value="{Binding LatencyMs, Mode=TwoWay}" AutomationProperties.Name="Latency in milliseconds" />
+                    Value="{Binding LatencyMs, Mode=TwoWay, Delay=300}" AutomationProperties.Name="Latency in milliseconds" />
             <TextBlock Text="Higher latency is more robust on a weak Wi-Fi connection."
                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" TextWrapping="Wrap" />
 

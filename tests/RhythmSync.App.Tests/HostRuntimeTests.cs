@@ -443,6 +443,16 @@ public sealed class HostRuntimeTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_speaker_list_leaves_out_the_captured_cable_before_and_while_hosting()
+    {
+        Assert.Equal(new[] { SpeakersId, HeadphonesId }, _runtime.Speakers().Select(d => d.Id));
+
+        await _runtime.StartAsync("Host");
+
+        Assert.Equal(new[] { SpeakersId, HeadphonesId }, _runtime.Speakers().Select(d => d.Id));
+    }
+
+    [Fact]
     public async Task Choosing_other_speakers_replaces_the_output_and_saves_the_choice()
     {
         await _runtime.StartAsync("Host");

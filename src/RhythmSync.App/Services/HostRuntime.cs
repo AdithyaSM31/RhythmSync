@@ -134,7 +134,13 @@ public sealed class HostRuntime : IHostRuntime
 
     public event Action? Changed;
 
-    public IReadOnlyList<AudioDeviceInfo> Speakers() => _env.Speakers();
+    /// <summary>Playback devices to choose for local playback: every active one except the captured endpoint (the VB-CABLE).</summary>
+    public IReadOnlyList<AudioDeviceInfo> Speakers()
+    {
+        var run = Volatile.Read(ref _run);
+        string? captured = run is not null ? run.CapturedId : SafeCable();
+        return _env.Speakers().Where(d => !Same(d.Id, captured)).ToList();
+    }
 
     public string? LocalSpeakerId => ResolveSpeaker();
 

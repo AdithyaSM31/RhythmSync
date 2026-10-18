@@ -20,7 +20,9 @@ public class HostTabViewModelTests
         public TaskCompletionSource? Gate;
         public event Action? Changed;
 
-        public IReadOnlyList<AudioDeviceInfo> Speakers() => new[] { new AudioDeviceInfo("a", "Speakers"), new AudioDeviceInfo("b", "Headphones") };
+        public IReadOnlyList<AudioDeviceInfo> SpeakerList = new[] { new AudioDeviceInfo("a", "Speakers"), new AudioDeviceInfo("b", "Headphones") };
+
+        public IReadOnlyList<AudioDeviceInfo> Speakers() => SpeakerList;
 
         public async Task StartAsync(string sessionName)
         {
@@ -185,6 +187,20 @@ public class HostTabViewModelTests
 
         vm.ReloadSpeakers();
         Assert.Equal(new[] { "a" }, runtime.Chosen);   // reloading re-selects "b" silently
+    }
+
+    [Fact]
+    public async Task While_hosting_the_speakers_are_listed_again_and_a_choice_reaches_the_running_host()
+    {
+        var runtime = new FakeRuntime();
+        var vm = Make(runtime);
+        runtime.SpeakerList = new[] { new AudioDeviceInfo("a", "Speakers"), new AudioDeviceInfo("c", "USB headset") };
+
+        await vm.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal(new[] { "a", "c" }, vm.Speakers.Select(s => s.Id));   // fresh list for the running host's picker
+        vm.SelectedSpeaker = vm.Speakers[1];
+        Assert.Equal(new[] { "c" }, runtime.Chosen);
     }
 
     [Fact]

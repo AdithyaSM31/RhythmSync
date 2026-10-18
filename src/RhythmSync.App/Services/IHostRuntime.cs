@@ -17,6 +17,7 @@ public interface IHostRuntime
     /// <summary>Raised on the UI thread when hosting starts, stops or restarts.</summary>
     event Action? Changed;
 
+    /// <summary>Devices to offer for local playback (the captured endpoint is left out).</summary>
     IReadOnlyList<AudioDeviceInfo> Speakers();
 
     /// <summary>The device local playback uses (the saved choice, else a real speaker); null if there is none.</summary>

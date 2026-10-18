@@ -27,6 +27,12 @@
         <DockPanel Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
             <Button DockPanel.Dock="Bottom" Content="Stop hosting" Command="{Binding StopCommand}" HorizontalAlignment="Left"
                     Width="120" Padding="0,5" Margin="12,6,12,12" />
+            <!-- The banners may ask for other speakers, so they can be changed while hosting (the VB-CABLE is not listed). -->
+            <StackPanel DockPanel.Dock="Bottom" Margin="12,6,12,0">
+                <TextBlock Text="Play on this PC through" Margin="0,0,0,2" />
+                <ComboBox ItemsSource="{Binding Speakers}" SelectedItem="{Binding SelectedSpeaker, Mode=TwoWay}" DisplayMemberPath="Name"
+                          AutomationProperties.Name="Speakers for local playback while hosting" />
+            </StackPanel>
             <views:HostView DataContext="{Binding Current}" />
         </DockPanel>
     </Grid>

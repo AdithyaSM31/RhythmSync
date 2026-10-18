@@ -9,7 +9,7 @@ namespace RhythmSync.App.ViewModels;
 
 /// <summary>
 /// The Host tab: before hosting, the session name, the speakers to play on and a Start button; while hosting, the running
-/// host (<see cref="Current"/>) and a Stop button. Runs on the UI thread.
+/// host (<see cref="Current"/>), the speakers to play on (changeable while running) and a Stop button. Runs on the UI thread.
 /// </summary>
 public sealed partial class HostTabViewModel : ObservableObject
 {
@@ -57,7 +57,7 @@ public sealed partial class HostTabViewModel : ObservableObject
 
     private AudioDeviceInfo? _selectedSpeaker;
 
-    /// <summary>The speakers this PC plays on while hosting. Choosing one saves it.</summary>
+    /// <summary>The speakers this PC plays on while hosting. Choosing one saves it and, while hosting, switches local playback to it.</summary>
     public AudioDeviceInfo? SelectedSpeaker
     {
         get => _selectedSpeaker;
@@ -136,6 +136,6 @@ public sealed partial class HostTabViewModel : ObservableObject
         IsHosting = _runtime.IsHosting;
         Current = _runtime.Current;
         if (!IsHosting && _runtime.LastError is { } error) ErrorText = error;
-        if (!IsHosting) ReloadSpeakers();
+        ReloadSpeakers();   // the running host's picker needs a fresh list too (devices come and go)
     }
 }
