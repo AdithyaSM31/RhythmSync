@@ -17,6 +17,28 @@ public class ViewMarkupTests
     private static XElement ByAutomationName(XDocument view, string element, string name) =>
         Assert.Single(view.Descendants(Wpf + element), e => (string?)e.Attribute("AutomationProperties.Name") == name);
 
+    /// <summary>
+    /// The test harness (Ui/UiDispatcher) loads Themes/AppResources.xaml instead of constructing App, whose startup has
+    /// side effects. That only stands in for the app while App.xaml's resources are exactly that dictionary.
+    /// </summary>
+    [Fact]
+    public void App_resources_merge_the_shared_theme_dictionary_the_tests_load()
+    {
+        var app = LoadAppFile("App.xaml");
+
+        var resources = Assert.Single(app.Root!.Elements(Wpf + "Application.Resources"));
+        var dictionary = Assert.Single(resources.Elements(Wpf + "ResourceDictionary"));
+        var merged = Assert.Single(dictionary.Elements(Wpf + "ResourceDictionary.MergedDictionaries"));
+        Assert.Contains(merged.Elements(Wpf + "ResourceDictionary"),
+            d => (string?)d.Attribute("Source") == "pack://application:,,,/RhythmSync;component/Themes/AppResources.xaml");
+    }
+
+    private static XDocument LoadAppFile(string file, [CallerFilePath] string here = "")
+    {
+        string repo = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", ".."));
+        return XDocument.Load(Path.Combine(repo, "src", "RhythmSync.App", file));
+    }
+
     [Fact]
     public void The_latency_slider_commits_once_after_dragging_stops_not_every_step()
     {
