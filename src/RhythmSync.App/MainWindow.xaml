@@ -38,8 +38,17 @@
                         </Style>
                     </c:Banner.Style>
                 </c:Banner>
-                <!-- Disabled while this PC is hosting. -->
+                <!-- Disabled while this PC is hosting, and dimmed so it looks it. -->
                 <Border IsEnabled="{Binding ClientEnabled}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ClientEnabled}" Value="False">
+                                    <Setter Property="Opacity" Value="0.4" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <views:ClientView DataContext="{Binding Client}" />
                 </Border>
             </DockPanel>

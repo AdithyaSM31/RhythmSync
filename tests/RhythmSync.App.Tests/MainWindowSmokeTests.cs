@@ -57,6 +57,10 @@ public sealed class MainWindowSmokeTests : IDisposable
         UiDispatcher.Render((FrameworkElement)VisualTreeHelper.GetChild(window, 0), 960, 640);
     }
 
+    /// <summary>The Join page's content holder (the Border around ClientView) that is disabled while hosting.</summary>
+    private static Border JoinContent(MainWindow window) =>
+        Assert.IsType<Border>(VisualTreeHelper.GetParent(Assert.Single(Descendants<ClientView>(window))));
+
     private static ContentPresenter ShownPage(MainWindow window) =>
         Assert.Single(Descendants<ContentPresenter>(window), p => p.Content is MainViewModel);
 
@@ -186,6 +190,7 @@ public sealed class MainWindowSmokeTests : IDisposable
             Assert.Equal(2, banners.Count);
             Assert.All(banners, b => Assert.Equal(Visibility.Collapsed, b.Visibility));
             Assert.True(Assert.Single(Descendants<ClientView>(window)).IsEnabled);
+            Assert.Equal(1, JoinContent(window).Opacity);
 
             vm.SetPublicNetwork(true);
             runtime.Host();
@@ -200,6 +205,11 @@ public sealed class MainWindowSmokeTests : IDisposable
             Assert.False(network.HasAction);
             Assert.False(hosting.HasAction);
             Assert.False(Assert.Single(Descendants<ClientView>(window)).IsEnabled);
+            Assert.Equal(0.4, JoinContent(window).Opacity);   // and looks it
+
+            runtime.StopAsync();
+            Layout(window);
+            Assert.Equal(1, JoinContent(window).Opacity);
 
             Assert.Empty(recorder.Errors);
         });
