@@ -1,6 +1,7 @@
 using System.Net;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using RhythmSync.App.Controls;
@@ -189,6 +190,75 @@ public class JoinPageSmokeTests
             UiDispatcher.Render(page.View, 960, 640);
             Assert.Equal(accent, BorderOf("Office PC"));
             Assert.NotEqual(accent, BorderOf("Living Room"));
+        });
+    }
+
+    private static void AssertNoBlackText(DependencyObject root)
+    {
+        var black = Descendants<TextBlock>(root)
+            .Where(t => Shown(t) && t.Text.Length > 0 && t.Foreground is SolidColorBrush { Color: { A: 255, R: 0, G: 0, B: 0 } })
+            .Select(t => t.Text).ToList();
+        Assert.True(black.Count == 0, "black text on the dark page: " + string.Join(", ", black));
+    }
+
+    /// <summary>Hosts the view the way the Window does (it supplies the inherited text colour), so only text that cuts the inheritance can turn out black.</summary>
+    private static Grid InWindowText(ClientView view) => new()
+    {
+        Children = { view },
+    };
+
+    [Fact]
+    public void Host_names_and_all_other_text_are_never_black()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var control = new FakeControl();
+            var page = NewPage([Living, Office], control);
+            page.Vm.SelectedHost = Living;
+            page.Vm.ErrorText = "Wrong code";
+            var shell = InWindowText(page.View);
+            TextElement.SetForeground(shell, (Brush)Application.Current.FindResource("TextBrush"));
+            UiDispatcher.Render(shell, 960, 640);
+
+            Assert.Equal(BrushColor("TextBrush"), ((SolidColorBrush)Text(shell, "Living Room").Foreground).Color);
+            Assert.Equal(BrushColor("TextBrush"), ((SolidColorBrush)Text(shell, "Office PC").Foreground).Color);
+            AssertNoBlackText(shell);
+
+            Join(page, control, Living, SyncState.InSync);
+            UiDispatcher.Render(shell, 960, 640);
+            AssertNoBlackText(shell);
+
+            var empty = NewPage([]);
+            var emptyShell = InWindowText(empty.View);
+            TextElement.SetForeground(emptyShell, (Brush)Application.Current.FindResource("TextBrush"));
+            UiDispatcher.Render(emptyShell, 960, 640);
+            AssertNoBlackText(emptyShell);
+        });
+    }
+
+    [Fact]
+    public void Host_cards_sit_far_enough_inside_the_viewport_for_the_selection_and_focus_rings()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var page = NewPage([Living, Office]);
+            page.Vm.SelectedHost = Living;
+            UiDispatcher.Render(page.View, MinPageWidth, MinPageHeight);
+
+            // 3 px selection ring + 4 px keyboard focus visual (StudioFocusVisual, Margin -4) around the item's own bounds.
+            var viewer = Descendants<ScrollViewer>(page.View).First();
+            var items = Descendants<ListBoxItem>(page.View).ToList();
+            Assert.Equal(2, items.Count);
+            foreach (var item in items)
+            {
+                Assert.True(Left(item, viewer) >= 4 - 0.5, $"a host item starts {Left(item, viewer)} px from the viewport edge");
+                Assert.True(Right(item, viewer) + 4 <= viewer.ViewportWidth + 0.5, "and the focus ring fits on the right");
+            }
+
+            // The cards stay aligned with the page title.
+            var title = Text(page.View, "Join a host");
+            var card = ShownCards(page.View).First();
+            Assert.Equal(Left(title, page.View), Left(card, page.View), 0.5);
         });
     }
 

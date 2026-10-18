@@ -41,15 +41,16 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- The scroller starts 3 px to the left and the content is inset by the same amount, so a selected card's ring is not clipped. -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="-3,0,0,0">
-        <StackPanel Margin="3,0,12,4">
+    <!-- The scroller starts 7 px to the left and the content is inset by the same amount: a host card sits 4 px inside the viewport,
+         so its 3 px selection ring and the 4 px keyboard focus ring around it are not clipped. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="-7,0,0,0">
+        <StackPanel Margin="7,0,12,4">
             <TextBlock Text="Join a host" Style="{StaticResource TitleText}" TextTrimming="CharacterEllipsis" />
             <TextBlock Text="Hosts on this network" Style="{StaticResource CaptionText}" Margin="0,14,0,8" />
 
             <ListBox ItemsSource="{Binding Hosts}" SelectedItem="{Binding SelectedHost, Mode=TwoWay}"
                      Template="{StaticResource HostListTemplate}" ItemContainerStyle="{StaticResource HostItem}"
-                     Background="Transparent" BorderThickness="0" Padding="0" Margin="-3,0"
+                     Background="Transparent" Foreground="{StaticResource TextBrush}" BorderThickness="0" Padding="0" Margin="-3,0"
                      ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      AutomationProperties.Name="Hosts on this network">
                 <ListBox.ItemTemplate>
