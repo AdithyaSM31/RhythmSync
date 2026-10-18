@@ -162,6 +162,50 @@ public class PlaybackSchedulerTests
         Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
     }
 
+    [Theory]
+    [InlineData(10)]    // plays later: the content is not due yet, so it fades out and waits for it
+    [InlineData(-10)]   // plays earlier: fades out and jumps forward at once
+    public void A_mid_stream_offset_change_resyncs_once_and_is_exact_within_half_a_second(double offsetMs)
+    {
+        var rig = new Rig(deviceDriftPpm: 100);
+        long change = Rig.T0 + 10 * Second;
+        rig.Sim.Schedule(change, () => rig.Scheduler.SetOffset(offsetMs, 200));
+
+        rig.Run(15);
+
+        Assert.Equal(1, rig.Scheduler.GetStats().Resyncs);
+        Assert.True(MaxDelta(rig.Output.Samples) < 0.06, $"click: max delta {MaxDelta(rig.Output.Samples):F4}");
+        AssertTracks(rig, 10.5, h => Rig.Truth(h, offsetTicks: h >= change ? (long)(offsetMs * 10_000) : 0));
+    }
+
+    [Fact]
+    public void An_offset_change_of_1ms_slews_without_a_resync()
+    {
+        var rig = new Rig(deviceDriftPpm: 100);
+        rig.Sim.Schedule(Rig.T0 + 10 * Second, () => rig.Scheduler.SetOffset(1, 200));
+
+        rig.Run(20);
+
+        Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
+        AssertTracks(rig, 15, h => Rig.Truth(h, offsetTicks: 10_000));
+    }
+
+    [Fact]
+    public void A_latency_reclamp_of_the_offset_slews_without_a_resync()
+    {
+        // A host latency change re-clamps the offset (here −80 ms requested: −50 at 100 ms, −60 at 110 ms). The latency
+        // change moves playAt too, so this is a latency step, which is slewed when under the hard-resync threshold.
+        var rig = new Rig(deviceDriftPpm: 100);
+        rig.Scheduler.ApplyLatency(-80, 100);
+        Assert.Equal(-50, rig.Scheduler.EffectiveOffsetMs, 6);
+        rig.Sim.Schedule(Rig.T0 + 10 * Second, () => rig.Scheduler.ApplyLatency(-80, 110));
+
+        rig.Run(12);
+
+        Assert.Equal(-60, rig.Scheduler.EffectiveOffsetMs, 6);
+        Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
+    }
+
     [Fact]
     public void Offset_is_clamped()
     {
@@ -173,6 +217,8 @@ public class PlaybackSchedulerTests
         Assert.Equal(100, scheduler.EffectiveOffsetMs);
         scheduler.SetOffset(-100, 200);
         Assert.Equal(-100, scheduler.EffectiveOffsetMs);
+        scheduler.ApplyLatency(-100, 120);
+        Assert.Equal(-70, scheduler.EffectiveOffsetMs);
     }
 
     [Fact]

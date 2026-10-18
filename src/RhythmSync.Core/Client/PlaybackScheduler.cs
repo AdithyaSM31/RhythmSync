@@ -13,13 +13,18 @@ public readonly record struct PlaybackStats(double SyncErrorMs, double RatioPpm,
 /// buffer mapping), and plays the stream through a cubic resampler whose rate a PI loop trims (within
 /// ±<see cref="MaxCorrectionPpm"/>) so that the error stays near zero. Errors beyond <see cref="HardResyncMs"/>
 /// cause one hard resync: the current audio fades out, then playback restarts, faded in, at the right position
-/// (immediately when behind; once the content is due when ahead). Frames go through a <see cref="Concealer"/>
-/// strictly in sequence order. <see cref="Render"/> runs on the audio thread and does not allocate;
-/// <see cref="SetOffset"/> and <see cref="GetStats"/> may be called from other threads.
+/// (immediately when behind; once the content is due when ahead). A user's offset change that moves the effective
+/// offset by more than <see cref="OffsetResyncMs"/> also resyncs once, so it is heard at once instead of being slewed
+/// out over many seconds. Frames go through a <see cref="Concealer"/> strictly in sequence order. <see cref="Render"/>
+/// runs on the audio thread and does not allocate; <see cref="SetOffset"/>, <see cref="ApplyLatency"/> and
+/// <see cref="GetStats"/> may be called from other threads.
 /// </summary>
 public sealed class PlaybackScheduler : IRenderCallback
 {
     public const double HardResyncMs = 20, MaxCorrectionPpm = 500;
+
+    /// <summary>An offset change that moves the effective offset by more than this resyncs once instead of slewing.</summary>
+    public const double OffsetResyncMs = 2;
 
     /// <summary>Proportional gain: rate correction per stream sample of error.</summary>
     public const double Kp = 1e-5;
@@ -33,6 +38,8 @@ public sealed class PlaybackScheduler : IRenderCallback
     private const double TicksPerMs = AudioFormat.TicksPerSecond / 1000.0;
     private const double StreamSamplesPerMs = AudioFormat.SampleRate / 1000.0;
     private const double HardResyncSamples = HardResyncMs * StreamSamplesPerMs;
+    private const double OffsetResyncSamples = OffsetResyncMs * StreamSamplesPerMs;
+    private const long OffsetResyncTicks = (long)(OffsetResyncMs * TicksPerMs);
     private const double MaxCorrection = MaxCorrectionPpm * 1e-6;
     private const double MaxIntegral = MaxCorrection / Ki;
     private const int FadeFrames = FrameSamples;
@@ -50,7 +57,9 @@ public sealed class PlaybackScheduler : IRenderCallback
     private readonly int _ringFrames;
     private readonly Concealer _concealer = new();
 
-    private long _offsetTicks;                  // written by SetOffset (any thread)
+    private long _offsetTicks;                  // written by SetOffset / ApplyLatency (any thread)
+    private int _offsetJumped;                  // 1: SetOffset moved the offset by more than OffsetResyncMs (any thread)
+    private readonly object _offsetGate = new();
     private volatile PlaybackState _state = PlaybackState.WaitingForData;
 
     // Audio-thread state.
@@ -85,15 +94,38 @@ public sealed class PlaybackScheduler : IRenderCallback
     }
 
     /// <summary>
-    /// Sets the per-device offset: positive plays later. Clamped to
+    /// Sets the per-device offset (a user's change): positive plays later. Clamped to
     /// <c>[max(−100, −(targetLatencyMs − 50)), 100]</c> ms so playback never asks for audio that cannot have arrived.
+    /// If the effective offset moves by more than <see cref="OffsetResyncMs"/>, the next render while playing does one
+    /// hard resync (fade out, then in at the new position); smaller changes are slewed.
     /// </summary>
     public void SetOffset(double offsetMs, int targetLatencyMs)
+    {
+        lock (_offsetGate)
+        {
+            long previous = Interlocked.Read(ref _offsetTicks);
+            long next = Clamp(offsetMs, targetLatencyMs);
+            Interlocked.Exchange(ref _offsetTicks, next);
+            if (Math.Abs(next - previous) > OffsetResyncTicks) Volatile.Write(ref _offsetJumped, 1);
+        }
+    }
+
+    /// <summary>
+    /// Re-applies the offset limit for a new target latency (same clamp as <see cref="SetOffset"/>). Never forces a
+    /// resync: the latency change moves the frames' play times as well, and latency steps under
+    /// <see cref="HardResyncMs"/> are slewed.
+    /// </summary>
+    public void ApplyLatency(double offsetMs, int targetLatencyMs)
+    {
+        lock (_offsetGate) Interlocked.Exchange(ref _offsetTicks, Clamp(offsetMs, targetLatencyMs));
+    }
+
+    private static long Clamp(double offsetMs, int targetLatencyMs)
     {
         if (!double.IsFinite(offsetMs)) throw new ArgumentOutOfRangeException(nameof(offsetMs), "Offset must be finite.");
         double lower = Math.Max(-MaxOffsetMs, -(targetLatencyMs - MinOffsetHeadroomMs));
         double clamped = Math.Clamp(offsetMs, lower, MaxOffsetMs);
-        Interlocked.Exchange(ref _offsetTicks, (long)Math.Round(clamped * TicksPerMs));
+        return (long)Math.Round(clamped * TicksPerMs);
     }
 
     public double EffectiveOffsetMs => Interlocked.Read(ref _offsetTicks) / TicksPerMs;
@@ -121,6 +153,9 @@ public sealed class PlaybackScheduler : IRenderCallback
         if (n > _maxRenderFrames)
             throw new ArgumentException($"Buffer exceeds {_maxRenderFrames} frames.", nameof(stereo));
         if (n == 0) return;
+
+        // Taken on every render: a jump requested while not playing is already in `should` when playback (re)starts.
+        bool offsetJumped = Interlocked.Exchange(ref _offsetJumped, 0) != 0;
 
         long heardClient = timing.DevicePositionClientTicks + (long)Math.Round(
             (timing.WritePositionFrames - timing.DevicePositionFrames) * (double)AudioFormat.TicksPerSecond / _deviceRate);
@@ -158,14 +193,15 @@ public sealed class PlaybackScheduler : IRenderCallback
         double startPos = _readPos;
         double err = should - _readPos;         // stream samples; positive = we are behind
         double corr = 0;
+        bool forced = offsetJumped && Math.Abs(err) > OffsetResyncSamples;
 
-        if (err > HardResyncSamples)
+        if (err > HardResyncSamples || (forced && err > 0))
         {
             FadeOut(stereo, n);
             Restart(should + n * _nominalStep);
             Interlocked.Increment(ref _resyncs);
         }
-        else if (err < -HardResyncSamples)
+        else if (err < -HardResyncSamples || forced)
         {
             FadeOut(stereo, n);
             _integral = 0;

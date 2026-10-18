@@ -65,7 +65,7 @@ public sealed class ClientPipeline : IFrameSink
     public void ReplaceOutputRate(int deviceSampleRate)
     {
         var next = new PlaybackScheduler(Buffer, _clock, deviceSampleRate, Dsp);
-        next.SetOffset(_scheduler.EffectiveOffsetMs, MaxTargetLatencyMs);
+        next.ApplyLatency(_scheduler.EffectiveOffsetMs, MaxTargetLatencyMs);
         _scheduler = next;
     }
 }

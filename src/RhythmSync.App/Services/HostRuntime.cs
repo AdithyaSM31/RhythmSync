@@ -456,7 +456,7 @@ public sealed class HostRuntime : IHostRuntime
         try
         {
             var local = new ClientPipeline(run.SessionId, new IdentityClockMapping(), output.SampleRate);
-            local.Scheduler.SetOffset(0, run.LatencyMs);
+            local.Scheduler.ApplyLatency(0, run.LatencyMs);
             Action handler = () =>
             {
                 if (ReferenceEquals(run.Output, output)) Volatile.Write(ref run.OutputDirty, 1);
@@ -492,7 +492,7 @@ public sealed class HostRuntime : IHostRuntime
     private void ApplyLocalLatency(Run run, int latencyMs)
     {
         run.LatencyMs = latencyMs;
-        try { run.Local?.Scheduler.SetOffset(0, latencyMs); }
+        try { run.Local?.Scheduler.ApplyLatency(0, latencyMs); }
         catch (Exception e) { Log.Warning(e, "Applying the new latency to local playback failed"); }
     }
 

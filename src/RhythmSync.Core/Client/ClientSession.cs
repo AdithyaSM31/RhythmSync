@@ -380,7 +380,7 @@ public sealed class ClientSession : IAsyncDisposable
         }
 
         pipeline.Gain.Gain = _volume;
-        pipeline.Scheduler.SetOffset(_requestedOffsetMs, c.LatencyMs);
+        pipeline.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
         c.Pipeline = pipeline;
         c.Window = new StatsWindow();
         Volatile.Write(ref _audioTarget, pipeline);
@@ -419,7 +419,7 @@ public sealed class ClientSession : IAsyncDisposable
             return;
         }
         // ReplaceOutputRate keeps only the clamped offset; re-apply what the user asked for.
-        pipeline.Scheduler.SetOffset(_requestedOffsetMs, c.LatencyMs);
+        pipeline.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
         StartOutputLocked(c, next, now);
     }
 
@@ -648,7 +648,7 @@ public sealed class ClientSession : IAsyncDisposable
                         {
                             if (_conn != c) break;
                             c.LatencyMs = Math.Clamp(l.TargetLatencyMs, MinLatencyMs, MaxLatencyMs);
-                            c.Pipeline?.Scheduler.SetOffset(_requestedOffsetMs, c.LatencyMs);
+                            c.Pipeline?.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
                         }
                         break;
                     case SetDeviceSettings s:
