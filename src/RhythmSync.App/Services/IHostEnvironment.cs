@@ -9,7 +9,7 @@ public interface ISilenceKeeper : IDisposable
 {
     void Start();
 
-    /// <summary>Raised (on any thread) when the device is lost or the default device changed.</summary>
+    /// <summary>Raised (on any thread) when the device is lost (or, for the default device, when the default changed).</summary>
     event Action? DeviceInvalidated;
 }
 
@@ -21,11 +21,11 @@ public interface IHostEnvironment
 {
     IDatagramChannelFactory Channels { get; }
 
-    /// <summary>Loopback capture of the current default playback device (not yet started).</summary>
-    IAudioCapture CreateCapture();
+    /// <summary>Loopback capture of the given playback endpoint, or of the default device when null (not yet started).</summary>
+    IAudioCapture CreateCapture(string? renderDeviceId);
 
-    /// <summary>A silence renderer on the current default playback device (not yet started).</summary>
-    ISilenceKeeper CreateSilenceKeeper();
+    /// <summary>A silence renderer on the given playback endpoint, or on the default device when null (not yet started).</summary>
+    ISilenceKeeper CreateSilenceKeeper(string? renderDeviceId);
 
     /// <summary>A render output on the given real speakers (not yet started).</summary>
     IAudioOutput CreateLocalOutput(string deviceId);

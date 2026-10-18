@@ -40,9 +40,9 @@ public sealed class WindowsHostEnvironment : IHostEnvironment
 
     public IDatagramChannelFactory Channels { get; } = new UdpDatagramChannelFactory();
 
-    public IAudioCapture CreateCapture() => new WasapiLoopbackSource(null);
+    public IAudioCapture CreateCapture(string? renderDeviceId) => new WasapiLoopbackSource(renderDeviceId);
 
-    public ISilenceKeeper CreateSilenceKeeper() => new KeeperAdapter(new SilenceKeeper(null));
+    public ISilenceKeeper CreateSilenceKeeper(string? renderDeviceId) => new KeeperAdapter(new SilenceKeeper(renderDeviceId));
 
     public IAudioOutput CreateLocalOutput(string deviceId) => new WasapiRenderOutput(deviceId);
 

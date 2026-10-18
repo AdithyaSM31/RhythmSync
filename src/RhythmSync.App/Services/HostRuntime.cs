@@ -31,16 +31,24 @@ public sealed record HostRuntimeOptions(int ControlPort = 47801, int AudioPort =
 /// pipeline, session and discovery beacon, and plays locally in sync on real speakers. Owns the lifetime of all of it.
 /// </summary>
 /// <remarks>
+/// What is captured: with VB-CABLE installed, the cable's playback endpoint, by id (whatever the default device is);
+/// without it, the default playback device, and the host only sends (no local playback). Local playback runs only while
+/// <see cref="HostAudioCheck"/> says <see cref="HostAudioStatus.Ok"/>: the cable is the default device (so this PC's own
+/// sound goes only through the cable) and the chosen speakers are not the captured endpoint. Anything else would play
+/// the sound twice here, or feed the delayed local output back into the capture and around again forever.
+///
 /// Threading: <see cref="StartAsync"/>, <see cref="StopAsync"/>, <see cref="Poll"/> and everything posted through the
 /// injected <c>post</c> run on the UI thread; <see cref="Tick"/> runs on the ticker thread and only reads the published run,
 /// calls <see cref="HostSession.Tick"/> and <see cref="DiscoveryBroadcaster.Tick"/>, and queues work. Device events arrive on
 /// arbitrary threads and only set flags that <see cref="Tick"/> turns into posted work, so nothing is rebuilt on the
 /// raising thread.
 ///
-/// Device changes: a change of the default playback device (or loss of the capture device) restarts the whole host
-/// (same name, pairing code and ports; clients reconnect on their own). Capture positions restart at zero on a new
-/// device and the pipeline's timestamp fit cannot be reset, so continuing in place would mis-time audio for minutes.
-/// A failed silence keeper or local output is rebuilt in place, retried about once a second.
+/// Device changes: a change of the default playback device only re-evaluates the audio status (the banner) and starts or
+/// stops local playback to match. Loss or invalidation of the captured endpoint (reported by the capture or by the
+/// silence keeper on it), or a default-device change while the default itself is what is captured, restarts the whole
+/// host (same name, pairing code and ports; clients reconnect on their own): capture positions restart at zero on a new
+/// stream and the pipeline's timestamp fit (a 30 s window) cannot be reset, so continuing in place would mis-time audio
+/// for up to 30 s. A failed local output is rebuilt in place, retried about once a second.
 ///
 /// The discovery listener (UDP 47800) is not touched by host mode: it keeps running and simply hears this host's own beacon.
 /// </remarks>
@@ -61,6 +69,7 @@ public sealed class HostRuntime : IHostRuntime
         public HostSession? Session;
         public DiscoveryBroadcaster? Broadcaster;
         public HostViewModel? Vm;
+        public string? CapturedId;                           // the captured endpoint; null: the default device
         public IAudioCapture? Capture;
         public ISilenceKeeper? Keeper;
         public IAudioOutput? Output;
@@ -69,7 +78,7 @@ public sealed class HostRuntime : IHostRuntime
         public IDisposable? Watcher;
         public Action? ClientsHandler;
 
-        public int RestartDirty, KeeperDirty, OutputDirty;   // set from any thread
+        public int RestartDirty, StatusDirty, OutputDirty;   // set from any thread
         public int RebuildQueued;                            // 1 while a posted rebuild is pending
         public long RetryAfterTicks;                         // ticker thread and UI thread; a stale read only delays a retry
     }
@@ -189,8 +198,9 @@ public sealed class HostRuntime : IHostRuntime
 
             try
             {
-                run.Capture = _env.CreateCapture();
-                run.Keeper = _env.CreateSilenceKeeper();
+                run.CapturedId = _env.VbCableId();
+                run.Capture = _env.CreateCapture(run.CapturedId);
+                run.Keeper = _env.CreateSilenceKeeper(run.CapturedId);
             }
             catch (Exception e)
             {
@@ -218,12 +228,16 @@ public sealed class HostRuntime : IHostRuntime
 
             run.ClientsHandler = () => Post(() => PumpClients(run));
             run.Session.ClientsChanged += run.ClientsHandler;
-            run.Watcher = _env.WatchDefaultRender(() => Volatile.Write(ref run.RestartDirty, 1));
+            run.Watcher = _env.WatchDefaultRender(() =>
+            {
+                if (run.CapturedId is null) Volatile.Write(ref run.RestartDirty, 1);   // the captured device itself changed
+                else Volatile.Write(ref run.StatusDirty, 1);
+            });
             RememberLocalSpeaker();
             ReconcileLocal(run, recreate: false);
 
             run.Capture.DeviceInvalidated += () => Volatile.Write(ref run.RestartDirty, 1);
-            run.Keeper.DeviceInvalidated += () => Volatile.Write(ref run.KeeperDirty, 1);
+            run.Keeper.DeviceInvalidated += () => Volatile.Write(ref run.RestartDirty, 1);
             run.Keeper.Start();
             run.Capture.Start(run.Pipeline.OnCaptured);
 
@@ -292,7 +306,7 @@ public sealed class HostRuntime : IHostRuntime
     private HostViewModel CreateViewModel(Run run)
     {
         var vm = new HostViewModel(new Control(this, run, run.Session!),
-            audioStatus: EvaluateAudio,
+            audioStatus: () => EvaluateAudio(run),
             storedSettings: id => _settings.Current.Devices.TryGetValue(id, out var d) ? d : null,
             saveSettings: (id, d) => _settings.Update(s => s with { Devices = new Dictionary<Guid, DeviceSettings>(s.Devices) { [id] = d } }),
             pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings);
@@ -305,7 +319,7 @@ public sealed class HostRuntime : IHostRuntime
 
     // ---- ticker thread -----------------------------------------------------------------------------------------------
 
-    /// <summary>Ticker thread, every active tick: drives the session and the beacon and queues rebuilds that device events asked for.</summary>
+    /// <summary>Ticker thread, every active tick: drives the session and the beacon and queues the work device events asked for.</summary>
     public void Tick()
     {
         var run = Volatile.Read(ref _run);
@@ -316,7 +330,7 @@ public sealed class HostRuntime : IHostRuntime
 
         bool restart = Volatile.Read(ref run.RestartDirty) != 0;
         bool retryDue = _clock.NowTicks >= Volatile.Read(ref run.RetryAfterTicks);
-        bool rebuild = restart || (retryDue && (Volatile.Read(ref run.KeeperDirty) != 0 || Volatile.Read(ref run.OutputDirty) != 0));
+        bool rebuild = restart || Volatile.Read(ref run.StatusDirty) != 0 || (retryDue && Volatile.Read(ref run.OutputDirty) != 0);
         if (rebuild && Interlocked.Exchange(ref run.RebuildQueued, 1) == 0)
             Post(() => _ = RebuildAsync(run));
     }
@@ -349,10 +363,18 @@ public sealed class HostRuntime : IHostRuntime
                 return;
             }
 
+            if (Interlocked.Exchange(ref run.StatusDirty, 0) != 0)
+            {
+                run.Vm?.RefreshAudioStatus();
+                ReconcileLocal(run, recreate: false);
+            }
+
             if (_clock.NowTicks < Volatile.Read(ref run.RetryAfterTicks)) return;
-            if (Interlocked.Exchange(ref run.KeeperDirty, 0) != 0) RebuildKeeper(run);
-            if (Interlocked.Exchange(ref run.OutputDirty, 0) != 0) ReconcileLocal(run, recreate: true);
-            run.Vm?.RefreshAudioStatus();
+            if (Interlocked.Exchange(ref run.OutputDirty, 0) != 0)
+            {
+                run.Vm?.RefreshAudioStatus();
+                ReconcileLocal(run, recreate: true);
+            }
         }
         catch (Exception e)
         {
@@ -364,7 +386,7 @@ public sealed class HostRuntime : IHostRuntime
         }
     }
 
-    /// <summary>The default device changed or the capture device was lost: rebuild the whole host on the new default.</summary>
+    /// <summary>The captured endpoint was lost or invalidated: rebuild the whole host (capturing the cable again if it is still there).</summary>
     private async Task RestartAsync(Run old)
     {
         await _lifecycle.WaitAsync().ConfigureAwait(true);
@@ -391,27 +413,6 @@ public sealed class HostRuntime : IHostRuntime
         RaiseChanged();
     }
 
-    private void RebuildKeeper(Run run)
-    {
-        Step("old silence keeper", () => run.Keeper?.Dispose());
-        run.Keeper = null;
-        ISilenceKeeper? keeper = null;
-        try
-        {
-            keeper = _env.CreateSilenceKeeper();
-            keeper.DeviceInvalidated += () => Volatile.Write(ref run.KeeperDirty, 1);
-            keeper.Start();
-            run.Keeper = keeper;
-        }
-        catch (Exception e)
-        {
-            Log.Warning(e, "Rebuilding the silence keeper failed; retrying");
-            Step("failed silence keeper", () => keeper?.Dispose());
-            Volatile.Write(ref run.KeeperDirty, 1);
-            Volatile.Write(ref run.RetryAfterTicks, _clock.NowTicks + _options.RetryDelayTicks);
-        }
-    }
-
     // ---- local playback ----------------------------------------------------------------------------------------------
 
     /// <summary>Chooses the speakers the host plays on itself and saves the choice.</summary>
@@ -426,9 +427,9 @@ public sealed class HostRuntime : IHostRuntime
     }
 
     /// <summary>
-    /// Brings local playback in line with the audio status: running on the chosen speakers, or off when the status is
-    /// <see cref="HostAudioStatus.VbCableMissing"/> or <see cref="HostAudioStatus.LocalSpeakerIsCaptured"/> (it would
-    /// double up with the sound of this PC, or feed back into the capture). Failures are logged and retried; they never stop hosting.
+    /// Brings local playback in line with the audio status: running on the chosen speakers only while the status is
+    /// <see cref="HostAudioStatus.Ok"/>, off otherwise (it would double up with the sound of this PC, or feed back into the
+    /// capture). Failures are logged and retried; they never stop hosting.
     /// </summary>
     private void ReconcileLocal(Run run, bool recreate)
     {
@@ -436,7 +437,7 @@ public sealed class HostRuntime : IHostRuntime
         try
         {
             var status = run.Vm.AudioStatus;
-            string? speaker = status is HostAudioStatus.VbCableMissing or HostAudioStatus.LocalSpeakerIsCaptured ? null : ResolveSpeaker();
+            string? speaker = status == HostAudioStatus.Ok ? ResolveSpeaker() : null;
 
             if (speaker is null || recreate) StopLocal(run);
             if (speaker is not null && run.Output is null) StartLocal(run, speaker);
@@ -497,8 +498,8 @@ public sealed class HostRuntime : IHostRuntime
 
     // ---- audio status and speakers -----------------------------------------------------------------------------------
 
-    private HostAudioStatus EvaluateAudio()
-        => HostAudioCheck.Evaluate(_env.DefaultRenderId(), _env.VbCableId(), ResolveSpeaker());
+    private HostAudioStatus EvaluateAudio(Run run)
+        => HostAudioCheck.Evaluate(_env.DefaultRenderId(), _env.VbCableId(), run.CapturedId, ResolveSpeaker());
 
     /// <summary>
     /// The saved speakers if still present; else the current default device unless it is the VB-CABLE; else the first

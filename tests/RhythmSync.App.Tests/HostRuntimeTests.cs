@@ -81,6 +81,8 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         public readonly List<FakeKeeper> Keepers = new();
         public readonly List<FakeOutput> Outputs = new();
         public readonly List<string> OutputDevices = new();
+        public readonly List<string?> CaptureDevices = new();   // null: "the default device"
+        public readonly List<string?> KeeperDevices = new();
         public List<AudioDeviceInfo> SpeakerList = new() { new(SpeakersId, "Speakers"), new(HeadphonesId, "Headphones"), new(CableDeviceId, "CABLE Input") };
         public string? DefaultId = CableDeviceId;   // the happy path: VB-CABLE is the default device
         public string? CableId = CableDeviceId;
@@ -91,16 +93,18 @@ public sealed class HostRuntimeTests : IAsyncDisposable
 
         public IDatagramChannelFactory Channels => RecordingChannels;
 
-        public IAudioCapture CreateCapture()
+        public IAudioCapture CreateCapture(string? renderDeviceId)
         {
             if (FailCapture) throw new InvalidOperationException("no device");
+            CaptureDevices.Add(renderDeviceId);
             var c = new FakeCapture(Log, $"capture{Captures.Count}", CaptureRate);
             Captures.Add(c);
             return c;
         }
 
-        public ISilenceKeeper CreateSilenceKeeper()
+        public ISilenceKeeper CreateSilenceKeeper(string? renderDeviceId)
         {
+            KeeperDevices.Add(renderDeviceId);
             var k = new FakeKeeper(Log, $"keeper{Keepers.Count}");
             Keepers.Add(k);
             return k;
@@ -377,13 +381,43 @@ public sealed class HostRuntimeTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Local_playback_runs_when_the_cable_is_not_the_default()
+    public async Task With_the_cable_installed_but_not_default_the_cable_is_captured_by_id_and_nothing_plays_locally()
     {
-        _env.DefaultId = SpeakersId;   // VB-CABLE exists but is not the default
+        _env.DefaultId = SpeakersId;   // VB-CABLE exists but is not the default: the speakers are what this PC plays on
+
         await _runtime.StartAsync("Host");
 
-        Assert.Single(_env.Outputs);
+        Assert.Equal(new string?[] { CableDeviceId }, _env.CaptureDevices);
+        Assert.Equal(new string?[] { CableDeviceId }, _env.KeeperDevices);
+        Assert.Empty(_env.Outputs);   // playing on the speakers would double up with what this PC already plays there
         Assert.Equal(HostAudioStatus.VbCableNotDefault, _runtime.Current!.AudioStatus);
+        Assert.Equal(HostViewModel_Banner(HostAudioStatus.VbCableNotDefault), _runtime.Current.AudioBanner);
+    }
+
+    [Fact]
+    public async Task Without_the_cable_the_default_device_is_captured_and_the_host_only_sends()
+    {
+        _env.CableId = null;
+        _env.DefaultId = SpeakersId;
+
+        await _runtime.StartAsync("Host");
+
+        Assert.Equal(new string?[] { null }, _env.CaptureDevices);
+        Assert.Equal(new string?[] { null }, _env.KeeperDevices);
+        Assert.Empty(_env.Outputs);
+    }
+
+    [Fact]
+    public async Task Local_playback_is_refused_on_the_captured_device_whatever_it_is()
+    {
+        await _runtime.StartAsync("Host");
+        Assert.Single(_env.Outputs);
+
+        _runtime.SetLocalSpeaker(CableDeviceId);   // the captured endpoint
+
+        Assert.Single(_env.Outputs);
+        Assert.Equal(1, _env.Log.Count("output0.stop"));
+        Assert.Equal(HostAudioStatus.LocalSpeakerIsCaptured, _runtime.Current!.AudioStatus);
     }
 
     [Fact]
@@ -472,25 +506,64 @@ public sealed class HostRuntimeTests : IAsyncDisposable
     // ---- device changes ----------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task An_invalidated_keeper_is_rebuilt_in_place_on_the_ticker_side()
+    public async Task A_default_device_change_refreshes_the_banner_and_starts_local_playback_without_a_restart()
     {
+        _env.DefaultId = SpeakersId;
         await _runtime.StartAsync("Host");
-        string code = _runtime.Current!.PairingCode;
+        var before = _runtime.Current!;
+        Assert.Empty(_env.Outputs);
+        int changed = 0;
+        _runtime.Changed += () => changed++;
 
-        _env.Keepers[0].Raise();
-        Assert.Single(_env.Keepers);
+        _env.DefaultId = CableDeviceId;   // the user follows the banner's advice
+        _env.DefaultChanged!();
+        Assert.Empty(_env.Outputs);       // nothing happens on the raising thread
         _runtime.Tick();
         Pump();
 
-        Assert.Equal(2, _env.Keepers.Count);
-        Assert.Equal(1, _env.Log.Count("keeper0.dispose"));
-        Assert.Equal(1, _env.Log.Count("keeper1.start"));
-        Assert.Single(_env.Captures);   // capture and session untouched
-        Assert.Equal(code, _runtime.Current.PairingCode);
+        Assert.Single(_env.Captures);     // no restart: the cable is still what is captured
+        Assert.Single(_env.Keepers);
+        Assert.Same(before, _runtime.Current);
+        Assert.Equal(0, changed);
+        Assert.Null(before.AudioBanner);
+        Assert.Equal(new[] { SpeakersId }, _env.OutputDevices);
+        Assert.Equal(1, _env.Log.Count("output0.start"));
     }
 
     [Fact]
-    public async Task A_default_device_change_restarts_the_host_keeping_name_code_and_stats_ui_state()
+    public async Task A_default_device_change_away_from_the_cable_stops_local_playback_without_a_restart()
+    {
+        await _runtime.StartAsync("Host");
+        Assert.Single(_env.Outputs);
+
+        _env.DefaultId = SpeakersId;
+        _env.DefaultChanged!();
+        _runtime.Tick();
+        Pump();
+
+        Assert.Single(_env.Captures);
+        Assert.Equal(1, _env.Log.Count("output0.stop"));
+        Assert.Equal(1, _env.Log.Count("output0.dispose"));
+        Assert.Equal(HostViewModel_Banner(HostAudioStatus.VbCableNotDefault), _runtime.Current!.AudioBanner);
+    }
+
+    [Fact]
+    public async Task Without_the_cable_a_default_device_change_restarts_the_host_because_the_default_is_what_is_captured()
+    {
+        _env.CableId = null;
+        await _runtime.StartAsync("Host");
+
+        _env.DefaultId = HeadphonesId;
+        _env.DefaultChanged!();
+        _runtime.Tick();
+        Pump();
+        await WaitUntil(() => _env.Captures.Count == 2);
+
+        Assert.True(_runtime.IsHosting);
+    }
+
+    [Fact]
+    public async Task A_lost_capture_device_restarts_the_host_keeping_name_code_and_stats_ui_state()
     {
         await _runtime.StartAsync("Host");
         var before = _runtime.Current!;
@@ -499,8 +572,7 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         int changed = 0;
         _runtime.Changed += () => changed++;
 
-        _env.DefaultId = CableDeviceId;
-        _env.DefaultChanged!();
+        _env.Captures[0].Raise();
         Assert.Single(_env.Captures);   // not inline
         _runtime.Tick();
         Pump();
@@ -513,23 +585,50 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         Assert.Equal(1, _env.Log.Count("capture0.stop"));
         Assert.Equal(1, _env.Log.Count("keeper0.dispose"));
         Assert.Equal(1, _env.Log.Count("capture1.start"));
+        Assert.Equal(new string?[] { CableDeviceId, CableDeviceId }, _env.CaptureDevices);
         Assert.Equal(1, changed);
-        Assert.Null(_runtime.Current.AudioBanner);   // the cable is the default now
+        Assert.Null(_runtime.Current.AudioBanner);
         Assert.Equal(0, _afterStop);                 // the client stays released across a restart
         Assert.Equal(1, _beforeStart);
     }
 
     [Fact]
-    public async Task A_lost_capture_device_restarts_the_host()
+    public async Task An_invalidated_silence_keeper_on_the_captured_device_restarts_the_host()
     {
         await _runtime.StartAsync("Host");
+        string code = _runtime.Current!.PairingCode;
 
-        _env.Captures[0].Raise();
+        _env.Keepers[0].Raise();
+        Assert.Single(_env.Keepers);   // not inline
         _runtime.Tick();
         Pump();
         await WaitUntil(() => _env.Captures.Count == 2);
 
         Assert.True(_runtime.IsHosting);
+        Assert.Equal(2, _env.Keepers.Count);
+        Assert.Equal(1, _env.Log.Count("keeper0.dispose"));
+        Assert.Equal(1, _env.Log.Count("keeper1.start"));
+        Assert.Equal(code, _runtime.Current!.PairingCode);
+    }
+
+    [Fact]
+    public async Task Losing_the_cable_restarts_the_host_capturing_the_default_as_a_sender_only()
+    {
+        await _runtime.StartAsync("Host");
+        Assert.Single(_env.Outputs);
+
+        _env.CableId = null;
+        _env.SpeakerList.RemoveAll(d => d.Id == CableDeviceId);
+        _env.DefaultId = SpeakersId;
+        _env.Captures[0].Raise();
+        _runtime.Tick();
+        Pump();
+        await WaitUntil(() => _env.Captures.Count == 2);
+
+        Assert.Equal(new string?[] { CableDeviceId, null }, _env.CaptureDevices);
+        Assert.Single(_env.Outputs);   // the old local output was stopped and none was started
+        Assert.Equal(1, _env.Log.Count("output0.dispose"));
+        Assert.Equal(HostViewModel_Banner(HostAudioStatus.VbCableMissing), _runtime.Current!.AudioBanner);
     }
 
     [Fact]
