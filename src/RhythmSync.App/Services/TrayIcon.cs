@@ -1,6 +1,9 @@
 namespace RhythmSync.App.Services;
 
-/// <summary>Notification-area icon with Show/Hide, a status line and Quit. Create and use on the UI thread.</summary>
+/// <summary>
+/// Notification-area icon. Right-click opens the menu (Show/Hide, a status line, Quit); a left click raises
+/// <see cref="LeftClick"/> (the tray flyout); a left double-click shows or hides the window. Create and use on the UI thread.
+/// </summary>
 public sealed class TrayIcon : IDisposable
 {
     private const int MaxTooltipLength = 63;   // NotifyIcon.Text limit
@@ -27,11 +30,18 @@ public sealed class TrayIcon : IDisposable
             ContextMenuStrip = menu,
             Visible = true,
         };
+        _icon.MouseClick += (_, e) =>
+        {
+            if (e.Button == System.Windows.Forms.MouseButtons.Left) LeftClick?.Invoke();
+        };
         _icon.MouseDoubleClick += (_, e) =>
         {
             if (e.Button == System.Windows.Forms.MouseButtons.Left) toggleWindow();
         };
     }
+
+    /// <summary>Raised on the UI thread when the icon is clicked with the left button.</summary>
+    public event Action? LeftClick;
 
     public void SetStatus(string text)
     {

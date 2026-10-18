@@ -1,0 +1,198 @@
+<Window x:Class="RhythmSync.App.Flyout.TrayFlyoutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:RhythmSync.App.Controls"
+        xmlns:f="clr-namespace:RhythmSync.App.Flyout"
+        xmlns:vm="clr-namespace:RhythmSync.App.ViewModels"
+        Style="{StaticResource StudioWindow}"
+        Title="RhythmSync" Width="320" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="True"
+        AutomationProperties.Name="RhythmSync quick controls">
+    <!-- The tray flyout (spec §5, flyout.html). DataContext: a TrayFlyoutViewModel. The panel sits ShadowMargin (8 px)
+         inside the transparent window, which leaves room for its shadow. -->
+    <Window.Resources>
+        <SolidColorBrush x:Key="FlyoutSurfaceBrush" Color="#12141A" />
+
+        <!-- A client row's status dot: the chip colours without the chip. -->
+        <Style x:Key="StatusDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="7" />
+            <Setter Property="Height" Value="7" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="{StaticResource TextMutedBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="InSync">
+                    <Setter Property="Fill" Value="{StaticResource TealBrush}" />
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="{StaticResource TealColor}" BlurRadius="7" ShadowDepth="0" Opacity="1" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="Syncing">
+                    <Setter Property="Fill" Value="{StaticResource AccentBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="Degraded">
+                    <Setter Property="Fill" Value="{StaticResource WarningBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="Disconnected">
+                    <Setter Property="Fill" Value="{StaticResource DangerBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- The small item card inside the flyout. -->
+        <Style x:Key="FlyoutItem" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="Root" Margin="8">
+        <Grid.RenderTransform>
+            <TranslateTransform x:Name="Slide" />
+        </Grid.RenderTransform>
+
+        <!-- The surface and its shadow, apart from the content so the text is not rendered through the effect. -->
+        <Border Background="{StaticResource FlyoutSurfaceBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                CornerRadius="14" SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect Color="Black" BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.55" />
+            </Border.Effect>
+        </Border>
+
+        <!-- Rows in visual order (header, body, buttons), so Tab follows what you see. -->
+        <Grid Margin="15">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Header: title, status chip and (while hosting) the pairing code. -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <c:LeadingShrinkPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource SubtitleText}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" />
+                    <c:StatusChip Text="{Binding ChipText}" Kind="{Binding ChipKind}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                </c:LeadingShrinkPanel>
+                <!-- One TextBlock per character: WPF has no letter spacing. The negative margin takes back the gap after the last one. -->
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding PairingCode}" Margin="12,0,-5,0" VerticalAlignment="Center"
+                              Focusable="False" AutomationProperties.Name="Pairing code" Foreground="{StaticResource TextBrush}"
+                              Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Style="{StaticResource DisplayText}" FontSize="20" Margin="0,0,5,0" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+
+            <!-- Body, per mode. Only this part scrolls when the flyout reaches its maximum height. -->
+            <ScrollViewer Grid.Row="1" Margin="0,9,0,0" VerticalScrollBarVisibility="Auto" Focusable="False">
+                <StackPanel>
+                    <!-- Hosting -->
+                    <StackPanel Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{x:Static f:TrayFlyoutViewModel.WaitingText}" Style="{StaticResource CaptionText}"
+                                   Visibility="{Binding ShowWaiting, Converter={StaticResource BoolToVisibility}}" />
+                        <!-- The negative bottom margin takes back the gap after the last row. -->
+                        <ItemsControl ItemsSource="{Binding Clients}" Focusable="False" Foreground="{StaticResource TextBrush}" Margin="0,0,0,-8">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ClientRowViewModel}">
+                                    <Border Style="{StaticResource FlyoutItem}" Margin="0,0,0,8">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Grid.Column="0" Style="{StaticResource StatusDot}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" FontWeight="SemiBold" Margin="8,0"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2" Text="{Binding SyncErrorText}" Style="{StaticResource CaptionText}"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
+                                            <Grid Margin="0,4,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="&#xE767;" FontFamily="{StaticResource FontIcons}" FontSize="12"
+                                                           Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                                                <!-- The row's own Volume: the same clamped, NaN-guarded path to the host as the main window. -->
+                                                <Slider Grid.Column="1" Minimum="0" Maximum="1" LargeChange="0.1" SmallChange="0.01"
+                                                        Value="{Binding Volume, Mode=TwoWay}" Margin="8,0" VerticalAlignment="Center"
+                                                        AutomationProperties.Name="{Binding Name, StringFormat='Volume of {0}'}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Volume, StringFormat={}{0:P0}}" Style="{StaticResource CaptionText}"
+                                                           MinWidth="30" TextAlignment="Right" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Joined -->
+                    <Border Style="{StaticResource FlyoutItem}" Visibility="{Binding IsJoined, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap">
+                                <Run Text="{Binding Client.SyncErrorText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Client.DriftText, Mode=OneWay}" />
+                            </TextBlock>
+                            <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0">
+                                <Run Text="{Binding Client.VolumeText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Client.OffsetText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{x:Static vm:ClientViewModel.SetOnHostText}" FontStyle="Italic" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Idle -->
+                    <TextBlock Text="{x:Static f:TrayFlyoutViewModel.IdleText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                               Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Buttons, per mode: a size down from the page buttons (12 px, 8,7 padding) so two fit side by side. -->
+            <Grid Grid.Row="2" Margin="0,11,0,0">
+                <Grid Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="Stop hosting" Command="{Binding StopHostingCommand}" Style="{StaticResource DangerButton}"
+                            FontSize="12" Padding="8,7" />
+                    <Button Grid.Column="2" Content="Open RhythmSync" Command="{Binding OpenCommand}" Style="{StaticResource SecondaryButton}"
+                            FontSize="12" Padding="8,7" />
+                </Grid>
+                <Grid Visibility="{Binding IsJoined, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="Leave" Command="{Binding LeaveCommand}" Style="{StaticResource SecondaryButton}"
+                            FontSize="12" Padding="8,7" />
+                    <Button Grid.Column="2" Content="Open RhythmSync" Command="{Binding OpenCommand}" Style="{StaticResource SecondaryButton}"
+                            FontSize="12" Padding="8,7" />
+                </Grid>
+                <Button Content="Open RhythmSync" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}"
+                        FontSize="12" Padding="8,7" Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

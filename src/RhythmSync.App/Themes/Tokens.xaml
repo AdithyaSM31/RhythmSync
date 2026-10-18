@@ -47,6 +47,8 @@
 
     <!-- Motion: one full cycle of the Syncing chip pulse (opacity 1 to 0.5 and back). -->
     <Duration x:Key="PulseDuration">0:0:1.6</Duration>
+    <!-- Motion: the tray flyout's entrance (slide up 12 px and fade in, cubic ease-out). -->
+    <Duration x:Key="FlyoutSlideDuration">0:0:0.15</Duration>
 
     <!-- Fonts (each falls back to the next family when the first is missing) -->
     <FontFamily x:Key="FontUi">Segoe UI Variable Text, Segoe UI</FontFamily>

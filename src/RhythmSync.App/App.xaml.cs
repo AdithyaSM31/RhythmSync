@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime;
 using System.Windows;
 using System.Windows.Threading;
+using RhythmSync.App.Flyout;
 using RhythmSync.App.Services;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Client;
@@ -27,6 +28,7 @@ public partial class App : Application
     private MainWindow _window = null!;
     private MainViewModel _main = null!;
     private TrayIcon? _tray;
+    private TrayFlyoutWindow? _flyout;
     private DiscoveryListener? _listener;
     private ClientSessionHolder? _client;
     private HostRuntime? _host;
@@ -120,7 +122,9 @@ public partial class App : Application
             isActive: () => client.State != SyncState.Disconnected || _host.IsHosting);
 
         _window = new MainWindow { DataContext = _main };
+        _flyout = new TrayFlyoutWindow { DataContext = new TrayFlyoutViewModel(hostTab, clientVm, _window.ShowAndActivate, post) };
         _tray = new TrayIcon(_window.ToggleVisibility, Quit);
+        _tray.LeftClick += ToggleFlyout;
         clientVm.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(ClientViewModel.StatusText)) _tray?.SetStatus(clientVm.StatusText);
@@ -202,6 +206,13 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Left click on the tray icon: opens or closes the flyout. Never throws into the tray's handler.</summary>
+    private void ToggleFlyout()
+    {
+        try { _flyout?.ToggleFromTray(); }
+        catch (Exception ex) { Log.Error(ex, "Toggling the tray flyout failed"); }
+    }
+
     private void OnJoined(DiscoveredHost host, string code)
         => _settings.Update(s => s with { LastHostName = host.Name, LastPairingCode = code }, immediate: true);
 
@@ -242,6 +253,12 @@ public partial class App : Application
         Step("discovery listener", () => _listener?.Dispose());
         Step("settings", () => _settings?.Dispose());   // writes anything still pending
         Step("tray", () => _tray?.Dispose());
+        Step("flyout", () =>
+        {
+            if (_flyout is null) return;
+            _flyout.AllowClose = true;
+            _flyout.Close();
+        });
         Step("single instance", () => _instance?.Dispose());
 
         _window.AllowClose = true;
