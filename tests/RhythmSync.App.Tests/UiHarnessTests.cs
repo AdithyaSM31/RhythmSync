@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using System.Windows.Threading;
 using RhythmSync.App.Tests.Ui;
 
@@ -10,6 +12,30 @@ namespace RhythmSync.App.Tests;
 [Collection("Ui")]
 public class UiHarnessTests
 {
+    [Fact]
+    public void The_harness_never_hosts_the_real_app()
+    {
+        // The real App's OnStartup starts logging, the tray icon, sockets and the elevated netsh firewall setup.
+        UiDispatcher.Run(() =>
+        {
+            Assert.NotNull(Application.Current);
+            Assert.False(Application.Current is RhythmSync.App.App, "the harness constructed the real RhythmSync App");
+            Assert.Equal(typeof(Application), Application.Current.GetType());
+        });
+    }
+
+    [Fact]
+    public void The_app_resources_resolve_from_the_plain_application()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var resources = Application.Current.Resources;
+            Assert.IsType<BooleanToVisibilityConverter>(resources["BoolToVisibility"]);
+            Assert.Equal(typeof(TextBlock), Assert.IsType<Style>(resources["OptionalText"]).TargetType);
+            Assert.IsType<SolidColorBrush>(Application.Current.FindResource("AccentBrush"));
+        });
+    }
+
     [Fact]
     public void The_binding_error_recorder_sees_a_broken_binding()
     {

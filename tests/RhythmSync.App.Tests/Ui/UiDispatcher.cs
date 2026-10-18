@@ -1,13 +1,16 @@
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Threading;
+using RhythmSync.App.Controls;
 
 namespace RhythmSync.App.Tests.Ui;
 
 /// <summary>
-/// One shared STA thread that hosts the real <see cref="App"/> (App.xaml's resources, which merge the Studio theme),
-/// so tests can build and lay out real views without showing a window. OnStartup only runs from Application.Run,
-/// which is never called, so none of the app's services start.
+/// One shared STA thread that hosts a plain <see cref="Application"/> carrying the app's resources
+/// (Themes/AppResources.xaml: converters, shared styles and the Studio theme), so tests can build and lay out real
+/// views without showing a window.
+/// SAFETY: this must never construct the real RhythmSync App. Running the dispatcher raises Application.Startup,
+/// which would run App.OnStartup: real logging, a tray icon, sockets and the elevated netsh firewall setup.
 /// </summary>
 internal static class UiDispatcher
 {
@@ -18,11 +21,12 @@ internal static class UiDispatcher
     private static ExceptionDispatchInfo? s_unhandled;
 
     /// <summary>
-    /// The theme App.xaml merges, addressed from outside the app assembly (whose name is "RhythmSync").
+    /// The dictionary App.xaml merges (converters, shared styles, and the Studio theme), addressed from outside the
+    /// app assembly (whose name is "RhythmSync").
     /// Built on demand: the pack scheme is only registered once WPF's Application type is initialised.
     /// </summary>
-    public static Uri ThemeUri => new(
-        $"pack://application:,,,/{typeof(App).Assembly.GetName().Name};component/Themes/Studio.xaml");
+    public static Uri AppResourcesUri => new(
+        $"pack://application:,,,/{typeof(SyncStateToKindConverter).Assembly.GetName().Name};component/Themes/AppResources.xaml");
 
     /// <summary>
     /// Runs <paramref name="body"/> on the UI thread and rethrows anything it throws, with its original stack.
@@ -96,9 +100,8 @@ internal static class UiDispatcher
             {
                 dispatcher = Dispatcher.CurrentDispatcher;
                 dispatcher.UnhandledException += OnUnhandledException;
-                var app = new App();
-                app.InitializeComponent();
-                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = AppResourcesUri });
             }
             catch (Exception e)
             {

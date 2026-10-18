@@ -39,7 +39,6 @@ public class ThemeTests
         UiDispatcher.Run(() =>
         {
             var resources = Application.Current.Resources;
-            Assert.IsType<App>(Application.Current);
             Assert.IsType<BooleanToVisibilityConverter>(resources["BoolToVisibility"]);
             Assert.Equal(typeof(TextBlock), Assert.IsType<Style>(resources["OptionalText"]).TargetType);
             Assert.Equal(Hex("#8B7CFF"), Assert.IsType<SolidColorBrush>(resources["AccentBrush"]).Color);
