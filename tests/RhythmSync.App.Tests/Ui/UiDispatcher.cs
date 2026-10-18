@@ -5,25 +5,38 @@ using System.Windows.Threading;
 namespace RhythmSync.App.Tests.Ui;
 
 /// <summary>
-/// One shared STA thread that owns a WPF <see cref="Application"/> with the Studio theme merged,
-/// so tests can build and lay out real controls without showing a window.
+/// One shared STA thread that hosts the real <see cref="App"/> (App.xaml's resources, which merge the Studio theme),
+/// so tests can build and lay out real views without showing a window. OnStartup only runs from Application.Run,
+/// which is never called, so none of the app's services start.
 /// </summary>
 internal static class UiDispatcher
 {
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
     private static readonly Lazy<Dispatcher> Shared = new(Start, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly object UnhandledGate = new();
+    private static ExceptionDispatchInfo? s_unhandled;
 
     /// <summary>
-    /// The theme the app merges in App.xaml, addressed from outside the app assembly (whose name is "RhythmSync").
+    /// The theme App.xaml merges, addressed from outside the app assembly (whose name is "RhythmSync").
     /// Built on demand: the pack scheme is only registered once WPF's Application type is initialised.
     /// </summary>
     public static Uri ThemeUri => new(
         $"pack://application:,,,/{typeof(App).Assembly.GetName().Name};component/Themes/Studio.xaml");
 
-    /// <summary>Runs <paramref name="body"/> on the UI thread and rethrows anything it throws, with its original stack.</summary>
-    public static void Run(Action body)
+    /// <summary>
+    /// Runs <paramref name="body"/> on the UI thread and rethrows anything it throws, with its original stack.
+    /// Throws <see cref="TimeoutException"/> if it has not finished within <paramref name="timeout"/> (default 30 s),
+    /// and rethrows an exception that an earlier posted callback left unhandled on the UI thread.
+    /// </summary>
+    public static void Run(Action body, TimeSpan? timeout = null)
     {
+        var limit = timeout ?? DefaultTimeout;
+        var dispatcher = Shared.Value;
+        RethrowUnhandled();
+
         ExceptionDispatchInfo? failure = null;
-        Shared.Value.Invoke(() =>
+        var operation = dispatcher.InvokeAsync(() =>
         {
             try
             {
@@ -34,7 +47,11 @@ internal static class UiDispatcher
                 failure = ExceptionDispatchInfo.Capture(e);
             }
         });
+        if (!operation.Task.Wait(limit))
+            throw new TimeoutException($"The UI test body did not finish within {limit.TotalSeconds:0.###} s.");
+
         failure?.Throw();
+        RethrowUnhandled();
     }
 
     /// <summary>Sizes and lays out <paramref name="element"/>, then lets the dispatcher run until idle (bindings, templates, layout). Call inside <see cref="Run"/>.</summary>
@@ -48,6 +65,25 @@ internal static class UiDispatcher
         element.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
     }
 
+    /// <summary>Reports (once) the first exception a posted callback threw on the UI thread since the last check.</summary>
+    private static void RethrowUnhandled()
+    {
+        ExceptionDispatchInfo? pending;
+        lock (UnhandledGate)
+        {
+            pending = s_unhandled;
+            s_unhandled = null;
+        }
+        pending?.Throw();
+    }
+
+    private static void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        e.Handled = true;   // keep the shared thread, and the test host, alive
+        lock (UnhandledGate)
+            s_unhandled ??= ExceptionDispatchInfo.Capture(e.Exception);
+    }
+
     private static Dispatcher Start()
     {
         using var ready = new ManualResetEventSlim();
@@ -59,8 +95,10 @@ internal static class UiDispatcher
             try
             {
                 dispatcher = Dispatcher.CurrentDispatcher;
-                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-                app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = ThemeUri });
+                dispatcher.UnhandledException += OnUnhandledException;
+                var app = new App();
+                app.InitializeComponent();
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             }
             catch (Exception e)
             {

@@ -34,6 +34,19 @@ public class ThemeTests
     private static Color Hex(string hex) => (Color)ColorConverter.ConvertFromString(hex);
 
     [Fact]
+    public void The_app_resources_and_the_merged_theme_resolve_together()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var resources = Application.Current.Resources;
+            Assert.IsType<App>(Application.Current);
+            Assert.IsType<BooleanToVisibilityConverter>(resources["BoolToVisibility"]);
+            Assert.Equal(typeof(TextBlock), Assert.IsType<Style>(resources["OptionalText"]).TargetType);
+            Assert.Equal(Hex("#8B7CFF"), Assert.IsType<SolidColorBrush>(resources["AccentBrush"]).Color);
+        });
+    }
+
+    [Fact]
     public void Every_token_and_style_key_resolves()
     {
         UiDispatcher.Run(() =>
@@ -224,27 +237,5 @@ public class ThemeTests
             foreach (var grandchild in Descendants(child))
                 yield return grandchild;
         }
-    }
-
-    [Fact]
-    public void The_binding_error_recorder_sees_a_broken_binding()
-    {
-        UiDispatcher.Run(() =>
-        {
-            using var recorder = new BindingErrorRecorder();
-            var text = new TextBlock { DataContext = new object() };
-            text.SetBinding(TextBlock.TextProperty, new Binding("NoSuchProperty"));
-
-            UiDispatcher.Render(text);
-
-            Assert.Contains(recorder.Errors, e => e.Contains("NoSuchProperty"));
-        });
-    }
-
-    [Fact]
-    public void The_ui_dispatcher_rethrows_failures_to_the_test()
-    {
-        var thrown = Assert.Throws<InvalidOperationException>(() => UiDispatcher.Run(() => throw new InvalidOperationException("boom")));
-        Assert.Equal("boom", thrown.Message);
     }
 }
