@@ -13,7 +13,7 @@ namespace RhythmSync.App.Tests;
 
 /// <summary>The shell (MainWindow, never shown) lays out every page with the real theme and no binding errors.</summary>
 [Collection("Ui")]
-public class MainWindowSmokeTests
+public sealed class MainWindowSmokeTests : IDisposable
 {
     private const string HostingNotice = "This PC is hosting – stop hosting to join another host.";
 
@@ -30,10 +30,19 @@ public class MainWindowSmokeTests
     private static T Named<T>(DependencyObject root, string automationName) where T : DependencyObject =>
         Assert.Single(Descendants<T>(root), e => AutomationProperties.GetName(e) == automationName);
 
-    private static (MainWindow Window, MainViewModel Vm, ShellTests.FakeRuntime Runtime) Make()
+    private readonly List<SettingsFixture> _fixtures = new();
+
+    public void Dispose()
+    {
+        foreach (var f in _fixtures) f.Dispose();
+    }
+
+    private (MainWindow Window, MainViewModel Vm, ShellTests.FakeRuntime Runtime) Make()
     {
         var runtime = new ShellTests.FakeRuntime();
-        var vm = new MainViewModel(ShellTests.Client(), host: new HostTabViewModel(runtime, "My PC"));
+        var fixture = new SettingsFixture();
+        _fixtures.Add(fixture);
+        var vm = new MainViewModel(ShellTests.Client(), host: new HostTabViewModel(runtime, "My PC"), settings: fixture.Vm);
         var window = new MainWindow { DataContext = vm };
         return (window, vm, runtime);
     }
@@ -70,7 +79,7 @@ public class MainWindowSmokeTests
                     case Page.Host: Assert.Single(Descendants<HostTabView>(shown)); break;
                     case Page.Join: Assert.Single(Descendants<ClientView>(shown)); break;
                     case Page.Settings:
-                        Assert.Contains(Descendants<TextBlock>(shown), t => t.Text == "Settings");
+                        Assert.Single(Descendants<SettingsView>(shown));
                         break;
                 }
                 Assert.True(Named<RadioButton>(window, page.ToString()).IsChecked, $"{page} nav item is not selected");

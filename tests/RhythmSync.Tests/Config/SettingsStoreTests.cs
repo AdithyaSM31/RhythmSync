@@ -92,4 +92,26 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(500, s.TargetLatencyMs);
         Assert.Equal(new DeviceSettings(1f, -100), s.Devices[device]);
     }
+
+    [Fact]
+    public void Settings_written_before_start_minimized_existed_load_with_it_off()
+    {
+        Directory.CreateDirectory(Dir);
+        File.WriteAllText(SettingsPath,
+            $$"""{ "DeviceId": "{{Guid.NewGuid()}}", "DeviceName": "Old PC", "TargetLatencyMs": 250, "FirewallConfigured": true, "Devices": {} }""");
+
+        var s = new SettingsStore(Dir).Load();
+
+        Assert.False(s.StartMinimized);
+        Assert.Equal("Old PC", s.DeviceName);
+    }
+
+    [Fact]
+    public void Start_minimized_round_trips()
+    {
+        var store = new SettingsStore(Dir);
+        store.Save(store.Load() with { StartMinimized = true });
+
+        Assert.True(new SettingsStore(Dir).Load().StartMinimized);
+    }
 }

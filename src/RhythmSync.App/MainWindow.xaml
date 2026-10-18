@@ -45,9 +45,8 @@
             </DockPanel>
         </DataTemplate>
 
-        <!-- A placeholder until the Settings page lands. -->
         <DataTemplate x:Key="SettingsPage">
-            <TextBlock Text="Settings" Style="{StaticResource TitleText}" />
+            <views:SettingsView DataContext="{Binding Settings}" />
         </DataTemplate>
     </Window.Resources>
 

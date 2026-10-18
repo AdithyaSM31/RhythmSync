@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Runtime;
 using System.Windows;
 using System.Windows.Threading;
@@ -107,7 +108,9 @@ public partial class App : Application
 
         _host = new HostRuntime(new WindowsHostEnvironment(), clock, _settings, post, client.ReleaseAsync, client.Allow);
         var hostTab = new HostTabViewModel(_host, _settings.Current.DeviceName);
-        _main = new MainViewModel(clientVm, post, hostTab) { SelectedPage = MainViewModel.InitialPage(_settings.Current.LastHostName) };
+        var settingsVm = new SettingsViewModel(_settings, new RegistryStartupRegistration(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "RhythmSync.exe")),
+            AppVersion(), OpenFolder, dataDir);
+        _main = new MainViewModel(clientVm, post, hostTab, settingsVm) { SelectedPage = MainViewModel.InitialPage(_settings.Current.LastHostName) };
 
         StartListener(clientVm, clock);
 
@@ -135,10 +138,39 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Error(args.Exception, "Unobserved task exception");
         SessionEnding += (_, _) => _window.AllowClose = true;
 
-        _window.Show();
+        // Minimized (--minimized, or the Start minimized setting): no window at startup; the tray icon is the way in.
+        if (ShouldShowWindowAtStartup(options, _settings.Current)) _window.Show();
         clientVm.RefreshHosts();
         _ = CheckNetworkAsync();
         if (!options.SkipFirewall && !_settings.Current.FirewallConfigured) _ = SetUpFirewallAsync();
+    }
+
+    /// <summary>Whether the main window is shown at startup: not when <c>--minimized</c> was passed or Start minimized is on.</summary>
+    internal static bool ShouldShowWindowAtStartup(StartupOptions options, AppSettings settings)
+        => !(options.Minimized || settings.StartMinimized);
+
+    /// <summary>The version shown on the Settings page: the informational version without its "+commit" build metadata.</summary>
+    private static string AppVersion()
+    {
+        var assembly = typeof(App).Assembly;
+        string? version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                          ?? assembly.GetName().Version?.ToString();
+        if (string.IsNullOrWhiteSpace(version)) return "";
+        int plus = version.IndexOf('+');
+        return plus > 0 ? version[..plus] : version;
+    }
+
+    private static void OpenFolder(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);   // the logs folder does not exist before the first log line
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{path}\"");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Could not open {Path}", path);
+        }
     }
 
     /// <summary>One ticker tick: the client session and the host each get their turn even if the other throws.</summary>

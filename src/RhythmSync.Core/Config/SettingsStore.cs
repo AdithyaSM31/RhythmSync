@@ -92,6 +92,7 @@ public sealed class SettingsStore
             TargetLatencyMs: latency == 0 ? DefaultTargetLatencyMs : Math.Clamp(latency, MinLatencyMs, MaxLatencyMs),
             LocalSpeakerDeviceId: s?.LocalSpeakerDeviceId,
             FirewallConfigured: s?.FirewallConfigured ?? false,
-            Devices: devices);
+            Devices: devices,
+            StartMinimized: s?.StartMinimized ?? false);
     }
 }

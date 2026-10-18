@@ -21,10 +21,11 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly List<ClientRowViewModel> _watchedRows = new();
     private string _footerText = FooterNotConnected;
 
-    public MainViewModel(ClientViewModel client, Action<Action>? post = null, HostTabViewModel? host = null)
+    public MainViewModel(ClientViewModel client, Action<Action>? post = null, HostTabViewModel? host = null, SettingsViewModel? settings = null)
     {
         Client = client ?? throw new ArgumentNullException(nameof(client));
         Host = host;
+        Settings = settings;
         _post = post ?? (a => a());
         if (host is not null) host.PropertyChanged += OnHostTabChanged;
         client.PropertyChanged += OnClientChanged;
@@ -43,6 +44,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>The Host page; null when host mode is unavailable.</summary>
     public HostTabViewModel? Host { get; }
+
+    /// <summary>The Settings page; null when it is not provided.</summary>
+    public SettingsViewModel? Settings { get; }
 
     /// <summary>False while hosting: this PC cannot also be a client of another host.</summary>
     public bool ClientEnabled => Host is not { IsHosting: true };
