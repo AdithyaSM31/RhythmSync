@@ -1,4 +1,12 @@
-# RhythmSync
+<p align="center">
+  <img src="src/RhythmSync.App/Assets/RhythmSync-256.png" width="128" height="128" alt="RhythmSync logo: a violet-to-teal sync wave on a dark rounded tile">
+</p>
+
+<h1 align="center">RhythmSync</h1>
+
+<p align="center"><b>One PC's audio, every PC's speakers, in sync.</b></p>
+
+<p align="center"><a href="https://github.com/AdithyaSM31/RhythmSync/releases/latest">Download the latest RhythmSync.exe</a> (64-bit Windows 10/11, no .NET install needed)</p>
 
 RhythmSync plays one Windows PC's audio on several PCs on the same Wi-Fi, in sync. The host captures its system audio (any app) with WASAPI loopback and streams it over UDP with timestamps. Each client syncs its clock to the host and plays every frame at the same moment, so PCs in one room act as a multi-speaker system. The goal is under 2 ms between PCs.
 
