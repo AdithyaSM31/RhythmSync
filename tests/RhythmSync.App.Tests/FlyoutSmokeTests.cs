@@ -234,6 +234,23 @@ public sealed class FlyoutSmokeTests
     }
 
     [Fact]
+    public void A_tray_double_click_closes_the_flyout_so_the_next_click_opens_it()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var rig = new Rig();
+            var toggle = rig.Window.Toggle;
+            Assert.True(toggle.OnTrayClick(DateTime.UtcNow));   // the double-click's first click opened it
+
+            rig.Window.CloseFromTray();   // the double-click itself, before the main window toggles
+
+            Assert.False(toggle.IsOpen);
+            Assert.Equal(Visibility.Hidden, rig.Window.Visibility);
+            Assert.True(toggle.OnTrayClick(DateTime.UtcNow), "a closed-by-action flyout opens on the next click at once");
+        });
+    }
+
+    [Fact]
     public void Entrance_slides_and_fades_only_when_animations_are_on()
     {
         UiDispatcher.Run(() =>

@@ -66,6 +66,12 @@ public partial class TrayFlyoutWindow : Window
         }
     }
 
+    /// <summary>
+    /// The tray icon was double-clicked: close the flyout (its first click may have opened it) before the main window
+    /// toggles, so the topmost flyout never stays open over the window. The next tray click opens it again at once.
+    /// </summary>
+    public void CloseFromTray() => CloseByAction();
+
     /// <summary>Esc closes the flyout. Returns whether <paramref name="key"/> was handled.</summary>
     internal bool CloseOnKey(Key key)
     {

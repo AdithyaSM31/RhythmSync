@@ -125,6 +125,7 @@ public partial class App : Application
         _flyout = new TrayFlyoutWindow { DataContext = new TrayFlyoutViewModel(hostTab, clientVm, _window.ShowAndActivate, post) };
         _tray = new TrayIcon(_window.ToggleVisibility, Quit);
         _tray.LeftClick += ToggleFlyout;
+        _tray.LeftDoubleClick += ToggleWindowFromTray;
         clientVm.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(ClientViewModel.StatusText)) _tray?.SetStatus(clientVm.StatusText);
@@ -211,6 +212,18 @@ public partial class App : Application
     {
         try { _flyout?.ToggleFromTray(); }
         catch (Exception ex) { Log.Error(ex, "Toggling the tray flyout failed"); }
+    }
+
+    /// <summary>
+    /// Double-click on the tray icon: its first click opened the flyout, so close that first (the topmost flyout must
+    /// not stay over the window), then show or hide the main window. Never throws into the tray's handler.
+    /// </summary>
+    private void ToggleWindowFromTray()
+    {
+        try { _flyout?.CloseFromTray(); }
+        catch (Exception ex) { Log.Error(ex, "Closing the tray flyout failed"); }
+        try { _window.ToggleVisibility(); }
+        catch (Exception ex) { Log.Error(ex, "Toggling the main window failed"); }
     }
 
     private void OnJoined(DiscoveredHost host, string code)
