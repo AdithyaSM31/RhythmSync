@@ -314,6 +314,80 @@ public class ClientSessionTests
         Assert.Equal(audio.Port, Assert.Single(rig.Host.Clients).AudioEndPoint.Port);
     }
 
+    /// <summary>Real UDP channels, except that the next Create throws once <see cref="FailNext"/> is set.</summary>
+    private sealed class FailingChannels : IDatagramChannelFactory
+    {
+        private int _failNext, _failures;
+
+        public void FailNext() => Volatile.Write(ref _failNext, 1);
+
+        public int Failures => Volatile.Read(ref _failures);
+
+        public IDatagramChannel Create(IPEndPoint bind, bool broadcast = false)
+        {
+            if (Interlocked.Exchange(ref _failNext, 0) != 0)
+            {
+                Interlocked.Increment(ref _failures);
+                throw new SocketException((int)SocketError.NoBufferSpaceAvailable);
+            }
+            return Channels.Create(bind, broadcast);
+        }
+    }
+
+    [Fact]
+    public async Task A_join_whose_session_setup_fails_ends_disconnected_and_releases_the_connection()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var channels = new FailingChannels();
+        await using var client = new ClientSession(new ClientSessionOptions(Guid.NewGuid(), "Laptop", AudioPort: 0),
+                                                   new StopwatchClock(), channels, new FakeOutputFactory());
+        // Bind the audio channel with a first join, then make the clock channel of the next join fail.
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        channels.FailNext();
+
+        await Assert.ThrowsAnyAsync<SocketException>(() => Within(client.JoinAsync(rig.Control, Code, CancellationToken.None)));
+
+        Assert.Equal(SyncState.Disconnected, client.State);
+        await TickUntil(() => rig.Host.Clients.Count == 0, client, TimeSpan.FromSeconds(5), () => rig);   // TCP closed, not leaked
+
+        Assert.Equal(JoinOutcome.Joined, (await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None))).Outcome);
+        Assert.Equal(SyncState.Syncing, client.State);
+    }
+
+    [Fact]
+    public async Task A_reconnect_whose_session_setup_fails_counts_as_a_failed_attempt_and_is_retried()
+    {
+        var rig = await HostRig.StartAsync();
+        int port = rig.Host.ControlPort;
+        var clock = new ManualClock { NowTicks = 1_000_000_000_000 };
+        var channels = new FailingChannels();
+        await using var client = new ClientSession(new ClientSessionOptions(Guid.NewGuid(), "Laptop", AudioPort: 0),
+                                                   clock, channels, new FakeOutputFactory());
+        HostRig? current = rig;
+        try
+        {
+            await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+            await rig.DisposeAsync();
+            current = null;
+            current = await HostRig.StartAsync(controlPort: port);
+
+            channels.FailNext();
+            clock.Advance(TimeSpan.FromSeconds(3.5));   // silence noticed: the first attempt starts on this tick
+            client.Tick();
+            await TickUntil(() => channels.Failures == 1 && client.UnexpectedFaults == 1, client, Limit);
+            client.Tick();
+            Assert.Equal(SyncState.Connecting, client.State);
+
+            clock.Advance(TimeSpan.FromSeconds(2));     // the next attempt
+            await TickUntil(() => client.State == SyncState.Syncing, client, Limit);
+            Assert.Single(current.Host.Clients);
+        }
+        finally
+        {
+            if (current is not null) await current.DisposeAsync();
+        }
+    }
+
     [Fact]
     public async Task Heartbeats_carry_stats_to_the_host()
     {

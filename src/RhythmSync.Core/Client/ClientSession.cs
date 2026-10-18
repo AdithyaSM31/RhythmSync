@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.ExceptionServices;
 using RhythmSync.Core.Audio;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
@@ -189,7 +190,9 @@ public sealed class ClientSession : IAsyncDisposable
     /// Joins the host at <paramref name="control"/>, replacing any current connection, and remembers the endpoint and
     /// code for reconnects. Binds the audio channel first (its port goes in Hello). Joined → <see cref="SyncState.Syncing"/>;
     /// otherwise <see cref="SyncState.Disconnected"/>. Throws <see cref="OperationCanceledException"/> if
-    /// <paramref name="ct"/> is cancelled or another join, leave or dispose supersedes this one.
+    /// <paramref name="ct"/> is cancelled or another join, leave or dispose supersedes this one. If setting up the joined
+    /// session fails (e.g. no socket for clock sync), the connection is closed, the state becomes Disconnected and the
+    /// exception propagates.
     /// </summary>
     public async Task<JoinResult> JoinAsync(IPEndPoint control, string pairingCode, CancellationToken ct)
     {
@@ -223,6 +226,7 @@ public sealed class ClientSession : IAsyncDisposable
             throw;
         }
 
+        Exception? installFailure = null;
         lock (_gate)
         {
             if (generation != _generation || _disposed)
@@ -230,10 +234,26 @@ public sealed class ClientSession : IAsyncDisposable
                 attempt.Conn?.Close();
                 throw new OperationCanceledException("The join was superseded.");
             }
-            if (attempt.Conn is not null) InstallLocked(attempt.Conn);
-            else changed = SetStateLocked(SyncState.Disconnected);
+            if (attempt.Conn is not null)
+            {
+                try
+                {
+                    InstallLocked(attempt.Conn);
+                    changed = true;
+                }
+                catch (Exception e)
+                {
+                    installFailure = e;   // InstallLocked released what it had created
+                    changed = SetStateLocked(SyncState.Disconnected);
+                }
+            }
+            else
+            {
+                changed = SetStateLocked(SyncState.Disconnected);
+            }
         }
-        if (attempt.Conn is not null || changed) RaiseStateChanged();
+        if (changed) RaiseStateChanged();
+        if (installFailure is not null) ExceptionDispatchInfo.Throw(installFailure);
         return attempt.Result;
     }
 
@@ -492,8 +512,16 @@ public sealed class ClientSession : IAsyncDisposable
                 }
                 else if (conn is not null)
                 {
-                    InstallLocked(conn);
-                    changed = true;
+                    try
+                    {
+                        InstallLocked(conn);
+                        changed = true;
+                    }
+                    catch (Exception)
+                    {
+                        // A failed attempt like any other: still Connecting, the next Tick retries until the give-up.
+                        Interlocked.Increment(ref _faults);
+                    }
                 }
                 else if (result.Outcome == JoinOutcome.Rejected)
                 {
@@ -516,29 +544,37 @@ public sealed class ClientSession : IAsyncDisposable
         if (changed) RaiseStateChanged();
     }
 
-    /// <summary>Makes <paramref name="conn"/> current: a new session (clock sync started; playback waits for convergence).</summary>
+    /// <summary>
+    /// Makes <paramref name="conn"/> current: a new session (clock sync started; playback waits for convergence). If
+    /// setting it up throws, everything created for it (the clock channel and the TCP connection) is released, the
+    /// current state is left as it was, and the exception propagates.
+    /// </summary>
     private void InstallLocked(Connection conn)
     {
-        CloseConnectionLocked();
-        _reconnecting = false;
-
         long now = _clock.NowTicks;
         conn.LastHeardTicks = now;
         conn.LatencyMs = Math.Clamp(conn.Welcome.TargetLatencyMs, MinLatencyMs, MaxLatencyMs);
         conn.Estimator = new ClockEstimator();
         var clockServer = new IPEndPoint(_endpoint!.Address, conn.Welcome.ClockPort);
-        IDatagramChannel channel;
+        IDatagramChannel? channel = null;
+        ClockSyncClient? clockClient = null;
         try
         {
             channel = _channels.Create(new IPEndPoint(IPAddress.Any, 0));
+            clockClient = new ClockSyncClient(channel, _clock, clockServer, conn.Welcome.SessionId, conn.Estimator);
+            clockClient.Start();
         }
         catch (Exception)
         {
+            if (clockClient is not null) DisposeQuietly(clockClient);   // also disposes the channel
+            else if (channel is not null) DisposeQuietly(channel);
             conn.Close();
             throw;
         }
-        conn.ClockClient = new ClockSyncClient(channel, _clock, clockServer, conn.Welcome.SessionId, conn.Estimator);
-        conn.ClockClient.Start();
+
+        CloseConnectionLocked();
+        _reconnecting = false;   // only now: a failed setup leaves a reconnect running
+        conn.ClockClient = clockClient;
         _conn = conn;
         SetStateLocked(SyncState.Syncing);
         conn.Reader = Task.Run(() => ReadLoopAsync(conn));
