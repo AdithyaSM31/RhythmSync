@@ -1,39 +1,65 @@
 <UserControl x:Class="RhythmSync.App.Views.HostTabView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:RhythmSync.App.Controls"
              xmlns:views="clr-namespace:RhythmSync.App.Views">
-    <!-- The Host tab. DataContext: a HostTabViewModel. -->
+    <!-- The Host page. DataContext: a HostTabViewModel. -->
     <Grid>
-        <!-- Before hosting -->
-        <StackPanel Margin="12" Visibility="{Binding IsNotHosting, Converter={StaticResource BoolToVisibility}}">
-            <TextBlock Text="Share this PC's audio" FontSize="16" FontWeight="SemiBold" />
-            <TextBlock Text="Other PCs on your Wi-Fi can join with the pairing code and play in sync."
-                       TextWrapping="Wrap" Margin="0,2,0,12" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
+        <!-- Before hosting: one centred card (spec 4.1). The scroller only matters when the window is smaller than the card. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding IsNotHosting, Converter={StaticResource BoolToVisibility}}">
+            <Border Style="{StaticResource CardBorder}" Width="360" Padding="24,22" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock HorizontalAlignment="Center" FontFamily="{StaticResource FontIcons}" FontSize="32" Text="&#xE7F5;"
+                               Foreground="{StaticResource AccentBrush}">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="{StaticResource AccentColor}" BlurRadius="20" Opacity="0.5" ShadowDepth="0" />
+                        </TextBlock.Effect>
+                    </TextBlock>
+                    <TextBlock Text="Share this PC's audio" Style="{StaticResource TitleText}" TextAlignment="Center"
+                               TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <TextBlock Text="Other PCs on your Wi-Fi can join with the pairing code and play in sync."
+                               Style="{StaticResource CaptionText}" TextAlignment="Center" TextWrapping="Wrap" Margin="0,4,0,0" />
 
-            <TextBlock Text="Session name" Margin="0,0,0,2" />
-            <TextBox Text="{Binding SessionName, UpdateSourceTrigger=PropertyChanged}" MaxLength="64"
-                     AutomationProperties.Name="Session name" />
+                    <TextBlock Text="Session name" Style="{StaticResource CaptionText}" Margin="0,18,0,4" />
+                    <TextBox Text="{Binding SessionName, UpdateSourceTrigger=PropertyChanged}" MaxLength="64"
+                             AutomationProperties.Name="Session name" />
 
-            <TextBlock Text="Play on this PC through" Margin="0,12,0,2" />
-            <ComboBox ItemsSource="{Binding Speakers}" SelectedItem="{Binding SelectedSpeaker, Mode=TwoWay}" DisplayMemberPath="Name"
-                      AutomationProperties.Name="Speakers for local playback" />
+                    <TextBlock Text="Play on this PC through" Style="{StaticResource CaptionText}" Margin="0,12,0,4" />
+                    <ComboBox ItemsSource="{Binding Speakers}" SelectedItem="{Binding SelectedSpeaker, Mode=TwoWay}" DisplayMemberPath="Name"
+                              AutomationProperties.Name="Speakers for local playback" />
 
-            <Button Content="Start hosting" Command="{Binding StartCommand}" IsDefault="True" HorizontalAlignment="Left"
-                    Width="120" Padding="0,5" Margin="0,16,0,0" />
-            <TextBlock Text="{Binding ErrorText}" Style="{StaticResource OptionalText}" Foreground="#B00020" Margin="0,8,0,0" />
-        </StackPanel>
+                    <Button Content="Start hosting" Command="{Binding StartCommand}" IsDefault="True"
+                            Style="{StaticResource PrimaryButton}" Padding="16,10" Margin="0,20,0,0" />
+                    <TextBlock Text="{Binding ErrorText}" Style="{StaticResource OptionalText}"
+                               Foreground="{StaticResource DangerBrush}" Margin="0,10,0,0" />
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
 
-        <!-- While hosting -->
+        <!-- While hosting: the fixed header, then the running host (which scrolls). -->
         <DockPanel Visibility="{Binding IsHosting, Converter={StaticResource BoolToVisibility}}">
-            <Button DockPanel.Dock="Bottom" Content="Stop hosting" Command="{Binding StopCommand}" HorizontalAlignment="Left"
-                    Width="120" Padding="0,5" Margin="12,6,12,12" />
-            <!-- The banners may ask for other speakers, so they can be changed while hosting (the VB-CABLE is not listed). -->
-            <StackPanel DockPanel.Dock="Bottom" Margin="12,6,12,0">
-                <TextBlock Text="Play on this PC through" Margin="0,0,0,2" />
-                <ComboBox ItemsSource="{Binding Speakers}" SelectedItem="{Binding SelectedSpeaker, Mode=TwoWay}" DisplayMemberPath="Name"
-                          AutomationProperties.Name="Speakers for local playback while hosting" />
-            </StackPanel>
-            <views:HostView DataContext="{Binding Current}" />
+            <!-- Name on the left (it ellipsizes), the status and the action grouped on the right. -->
+            <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- Display only: the name is edited in the settings card below. -->
+                <TextBlock Grid.Column="0" Text="{Binding Current.SessionName}" Style="{StaticResource TitleText}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <c:StatusChip Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" Kind="Hosting" Text="Hosting" />
+                <Button Grid.Column="2" Content="Stop hosting" Command="{Binding StopCommand}"
+                        Style="{StaticResource DangerButton}" Padding="14,7" />
+            </Grid>
+
+            <!-- The banners may ask for other speakers, so the picker can be changed while hosting (the VB-CABLE is not listed). -->
+            <views:HostView x:Name="RunningHost" DataContext="{Binding Current}">
+                <views:HostView.SpeakerPicker>
+                    <ComboBox ItemsSource="{Binding Speakers}" SelectedItem="{Binding SelectedSpeaker, Mode=TwoWay}" DisplayMemberPath="Name"
+                              AutomationProperties.Name="Speakers for local playback while hosting" />
+                </views:HostView.SpeakerPicker>
+            </views:HostView>
         </DockPanel>
     </Grid>
 </UserControl>

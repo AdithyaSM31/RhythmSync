@@ -1,34 +1,37 @@
 <UserControl x:Class="RhythmSync.App.Views.StatsPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Per-client statistics from the client's heartbeats. DataContext: a ClientRowViewModel. -->
-    <Grid Margin="0,6,0,0">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <Grid.Resources>
-            <Style TargetType="TextBlock">
-                <Setter Property="Margin" Value="0,1,12,1" />
-            </Style>
-        </Grid.Resources>
+    <!-- Per-client statistics from the client's heartbeats: a hairline, then five label/value columns. DataContext: a ClientRowViewModel. -->
+    <Border BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="0,10,0,0">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Sync error" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SyncErrorText}" />
-        <TextBlock Grid.Row="1" Text="Packet loss" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding LossText}" />
-        <TextBlock Grid.Row="2" Text="Late packets" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LateText}" />
-        <TextBlock Grid.Row="3" Text="Clock drift" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DriftText}" />
-        <TextBlock Grid.Row="4" Text="Clock fit residual" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
-        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding FitResidualText}" />
-    </Grid>
+            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                <TextBlock Text="Sync error" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding SyncErrorText}" Style="{StaticResource StatText}" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                <TextBlock Text="Packet loss" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LossText}" Style="{StaticResource StatText}" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Margin="0,0,8,0">
+                <TextBlock Text="Late packets" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LateText}" Style="{StaticResource StatText}" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="3" Margin="0,0,8,0">
+                <TextBlock Text="Clock drift" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding DriftText}" Style="{StaticResource StatText}" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="4">
+                <TextBlock Text="Clock fit residual" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding FitResidualText}" Style="{StaticResource StatText}" Margin="0,2,0,0" />
+            </StackPanel>
+        </Grid>
+    </Border>
 </UserControl>
