@@ -93,6 +93,14 @@ If 47802 or 47803 is taken, the audio and clock ports fall back to ephemeral por
 - Settings: `%AppData%\RhythmSync\settings.json` (device id, name, last host and pairing code, per-device volume and offset).
 - Logs: `%AppData%\RhythmSync\logs\` (daily rolling files, 7 kept).
 
+## The logo
+
+The "sync wave" logo is `src/RhythmSync.App/Assets/RhythmSync.svg` (master artwork). `RhythmSync.ico` (frames 16, 20, 24, 32, 40, 48, 64 and 256 px, PNG-compressed) is the exe, window, title-bar and tray icon, and `RhythmSync-256.png` is for docs. Both are generated from the same geometry by a small off-screen WPF tool; after changing the artwork, regenerate them with:
+
+```
+dotnet run --project tools/IconGen
+```
+
 ## Known limitations
 
 - Traffic is not encrypted. Anyone on the LAN can listen to the stream.

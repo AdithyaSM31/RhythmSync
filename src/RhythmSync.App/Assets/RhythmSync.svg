@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>RhythmSync</title>
+  <!-- Master artwork for the RhythmSync logo (sync wave). tools/IconGen renders the same geometry with WPF into
+       Assets/RhythmSync.ico (16 to 256 px). Keep the two in step. -->
+  <defs>
+    <linearGradient id="wave" gradientUnits="userSpaceOnUse" x1="24" y1="0" x2="104" y2="0">
+      <stop offset="0" stop-color="#8B7CFF"/>
+      <stop offset="1" stop-color="#4FD1C5"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="#0E0F13" stroke="#232733" stroke-width="2"/>
+  <!-- Echo wave: the main path shifted down 6 units, thinner and faint. -->
+  <path d="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+        transform="translate(0 6)" fill="none" stroke="url(#wave)" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/>
+  <path d="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+        fill="none" stroke="url(#wave)" stroke-width="10"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

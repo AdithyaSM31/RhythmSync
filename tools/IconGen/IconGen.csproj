@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Offline tool: renders the RhythmSync logo with WPF (off-screen, to files) and writes Assets/RhythmSync.ico and
+       RhythmSync-256.png. It deliberately does not reference the App project.
+       Regenerate with the dotnet run command in the README ("The logo"). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>IconGen</RootNamespace>
+  </PropertyGroup>
+
+</Project>
