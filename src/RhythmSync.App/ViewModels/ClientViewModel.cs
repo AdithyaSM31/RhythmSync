@@ -12,7 +12,8 @@ using Serilog;
 namespace RhythmSync.App.ViewModels;
 
 /// <summary>
-/// Client mode: the discovered hosts, the pairing code, joining, live status and the local volume/offset sliders.
+/// Client mode: the discovered hosts, the pairing code, joining, live status, and this PC's volume and offset as the
+/// host set them (read-only here: the host is the single source of truth for per-device settings).
 /// Network callbacks (host list changes, session state changes) arrive on background threads, so every UI-bound update
 /// goes through the injected <c>post</c> (the dispatcher in the app, inline in tests) and exceptions never travel back
 /// into the network thread.
@@ -25,6 +26,7 @@ public sealed partial class ClientViewModel : ObservableObject
     public const string SearchingText = "Looking for hosts…";
     public const string AudioDeviceText = "Can't open the audio device – check your sound settings.";
     public const string Unknown = StatFormat.Unknown;
+    public const string SetOnHostText = "Set on the host";
 
     public const float MaxVolume = 1f;
     public const double MaxOffsetMs = 100;
@@ -36,7 +38,6 @@ public sealed partial class ClientViewModel : ObservableObject
 
     private float _volume = MaxVolume;
     private double _offsetMs;
-    private bool _pulling;
     private long _outputFailures;
     private long _failureBaseline;
     private PlaybackStats? _stats;
@@ -55,8 +56,7 @@ public sealed partial class ClientViewModel : ObservableObject
         {
             _state = control.State;
             _outputFailures = _failureBaseline = control.OutputFailures;
-            if (float.IsFinite(control.Volume)) _volume = Math.Clamp(control.Volume, 0f, MaxVolume);
-            if (double.IsFinite(control.OffsetMs)) _offsetMs = Math.Clamp(control.OffsetMs, -MaxOffsetMs, MaxOffsetMs);
+            ShowHostSettings(control.Volume, control.OffsetMs);
             control.StateChanged += OnSessionStateChanged;
         }
     }
@@ -209,7 +209,7 @@ public sealed partial class ClientViewModel : ObservableObject
         Post(() => { if (_control is not null) State = _control.State; });
     }
 
-    /// <summary>Polls the session for stats, failures and host-driven volume/offset changes. Safe to call from any thread.</summary>
+    /// <summary>Polls the session for stats, failures and the volume/offset the host set. Safe to call from any thread.</summary>
     public void Refresh() => Post(RefreshCore);
 
     private void RefreshCore()
@@ -221,16 +221,7 @@ public sealed partial class ClientViewModel : ObservableObject
         _outputFailures = _control.OutputFailures;
         if (State == SyncState.InSync) _failureBaseline = _outputFailures;
 
-        _pulling = true;   // the host may overwrite the session's volume/offset; adopt that without writing it back
-        try
-        {
-            Volume = _control.Volume;
-            OffsetMs = _control.OffsetMs;
-        }
-        finally
-        {
-            _pulling = false;
-        }
+        ShowHostSettings(_control.Volume, _control.OffsetMs);
 
         OnPropertyChanged(nameof(SyncErrorText));
         OnPropertyChanged(nameof(DriftText));
@@ -247,35 +238,13 @@ public sealed partial class ClientViewModel : ObservableObject
 
     private bool CanLeave() => _control is not null && State != SyncState.Disconnected;
 
-    // ---- volume and offset -------------------------------------------------------------------------------------------
+    // ---- volume and offset (set on the host) -------------------------------------------------------------------------
 
-    /// <summary>Linear volume, 0..1. NaN is ignored; the session never sees a non-finite or out-of-range value.</summary>
-    public float Volume
-    {
-        get => _volume;
-        set
-        {
-            if (float.IsNaN(value)) return;
-            float v = Math.Clamp(value, 0f, MaxVolume);
-            if (!SetProperty(ref _volume, v)) return;
-            OnPropertyChanged(nameof(VolumeText));
-            if (!_pulling) Push(() => _control!.Volume = v);
-        }
-    }
+    /// <summary>This PC's linear volume, 0..1, as the host set it. Read-only: it is tuned on the host's row for this PC.</summary>
+    public float Volume => _volume;
 
-    /// <summary>Per-device offset in ms, −100..100 (positive plays later). NaN is ignored.</summary>
-    public double OffsetMs
-    {
-        get => _offsetMs;
-        set
-        {
-            if (double.IsNaN(value)) return;
-            double v = Math.Clamp(value, -MaxOffsetMs, MaxOffsetMs);
-            if (!SetProperty(ref _offsetMs, v)) return;
-            OnPropertyChanged(nameof(OffsetText));
-            if (!_pulling) Push(() => _control!.OffsetMs = v);
-        }
-    }
+    /// <summary>This PC's offset in ms, −100..100 (positive plays later), as the host set it. Read-only.</summary>
+    public double OffsetMs => _offsetMs;
 
     public string VolumeText => $"Volume: {Math.Round(_volume * 100).ToString("F0", CultureInfo.InvariantCulture)}%";
 
@@ -288,11 +257,13 @@ public sealed partial class ClientViewModel : ObservableObject
         }
     }
 
-    private void Push(Action write)
+    /// <summary>Shows the host's values; non-finite ones are ignored and the rest clamped to the slider ranges.</summary>
+    private void ShowHostSettings(float volume, double offsetMs)
     {
-        if (_control is null) return;
-        try { write(); }
-        catch (Exception e) { Log.Warning(e, "Applying volume/offset to the session failed"); }
+        if (!float.IsNaN(volume) && SetProperty(ref _volume, Math.Clamp(volume, 0f, MaxVolume), nameof(Volume)))
+            OnPropertyChanged(nameof(VolumeText));
+        if (!double.IsNaN(offsetMs) && SetProperty(ref _offsetMs, Math.Clamp(offsetMs, -MaxOffsetMs, MaxOffsetMs), nameof(OffsetMs)))
+            OnPropertyChanged(nameof(OffsetText));
     }
 
     // ---- marshalling -------------------------------------------------------------------------------------------------

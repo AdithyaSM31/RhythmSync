@@ -9,7 +9,8 @@ namespace RhythmSync.App.Services;
 /// <summary>
 /// Owns the app's <see cref="ClientSession"/> and lets host mode take the network ports from it. The session is created
 /// on the first join. <see cref="ReleaseAsync"/> leaves, disposes it (freeing the audio port) and blocks joining until
-/// <see cref="Allow"/>; the next join then creates a fresh session. Volume and offset are remembered across sessions.
+/// <see cref="Allow"/>; the next join then creates a fresh session. Volume and offset are whatever the host sent the
+/// current session (the host keeps them per device and sends them on every join).
 /// Exposes the session to the client view model. Thread-safe: <see cref="Tick"/> is called from the ticker thread while
 /// the UI thread joins and releases.
 /// </summary>
@@ -19,8 +20,6 @@ public sealed class ClientSessionHolder : IClientSessionControl, IAsyncDisposabl
     private readonly object _gate = new();
     private ClientSession? _session;
     private bool _blocked, _disposed;
-    private float _volume = 1f;
-    private double _offsetMs;
 
     public ClientSessionHolder(Func<ClientSession> factory) => _factory = factory ?? throw new ArgumentNullException(nameof(factory));
 
@@ -28,33 +27,9 @@ public sealed class ClientSessionHolder : IClientSessionControl, IAsyncDisposabl
 
     public event Action? StateChanged;
 
-    public float Volume
-    {
-        get { lock (_gate) return _session?.Volume ?? _volume; }
-        set
-        {
-            if (!float.IsFinite(value)) throw new ArgumentException("Volume must be a finite number.", nameof(value));
-            lock (_gate)
-            {
-                _volume = Math.Clamp(value, 0f, 1f);
-                if (_session is not null) _session.Volume = _volume;
-            }
-        }
-    }
+    public float Volume => Volatile.Read(ref _session)?.Volume ?? 1f;
 
-    public double OffsetMs
-    {
-        get { lock (_gate) return _session?.OffsetMs ?? _offsetMs; }
-        set
-        {
-            if (!double.IsFinite(value)) throw new ArgumentException("Offset must be a finite number.", nameof(value));
-            lock (_gate)
-            {
-                _offsetMs = Math.Clamp(value, -100, 100);
-                if (_session is not null) _session.OffsetMs = _offsetMs;
-            }
-        }
-    }
+    public double OffsetMs => Volatile.Read(ref _session)?.OffsetMs ?? 0;
 
     public PlaybackStats? Stats => Volatile.Read(ref _session)?.Stats;
 
@@ -76,8 +51,6 @@ public sealed class ClientSessionHolder : IClientSessionControl, IAsyncDisposabl
             if (_session is null)
             {
                 _session = _factory();
-                _session.Volume = _volume;
-                _session.OffsetMs = _offsetMs;
                 _session.StateChanged += OnSessionStateChanged;
             }
             session = _session;
@@ -93,11 +66,6 @@ public sealed class ClientSessionHolder : IClientSessionControl, IAsyncDisposabl
         {
             _blocked = true;
             session = _session;
-            if (session is not null)
-            {
-                _volume = session.Volume;
-                _offsetMs = session.OffsetMs;
-            }
         }
         if (session is null) return;
 

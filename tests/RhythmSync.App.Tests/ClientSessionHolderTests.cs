@@ -40,17 +40,12 @@ public class ClientSessionHolderTests
     }
 
     [Fact]
-    public void Volume_and_offset_are_remembered_and_clamped_without_a_session()
+    public void Without_a_session_volume_and_offset_are_the_defaults()
     {
         var holder = Make();
 
-        holder.Volume = 0.4f;
-        holder.OffsetMs = 500;
-
-        Assert.Equal(0.4f, holder.Volume);
-        Assert.Equal(100, holder.OffsetMs);
-        Assert.Throws<ArgumentException>(() => holder.Volume = float.NaN);
-        Assert.Throws<ArgumentException>(() => holder.OffsetMs = double.PositiveInfinity);
+        Assert.Equal(1f, holder.Volume);
+        Assert.Equal(0, holder.OffsetMs);
     }
 
     [Fact]
@@ -73,7 +68,6 @@ public class ClientSessionHolderTests
     public async Task Release_disposes_the_session_so_the_next_join_creates_a_fresh_one()
     {
         var holder = Make();
-        holder.Volume = 0.3f;
         await Assert.ThrowsAnyAsync<Exception>(() => holder.JoinAsync(new IPEndPoint(IPAddress.Loopback, 1), "1234"));
         Assert.Equal(1, _created);
         int changes = 0;
@@ -84,7 +78,6 @@ public class ClientSessionHolderTests
         await Assert.ThrowsAnyAsync<Exception>(() => holder.JoinAsync(new IPEndPoint(IPAddress.Loopback, 1), "1234"));
 
         Assert.Equal(2, _created);
-        Assert.Equal(0.3f, holder.Volume);   // carried over
         Assert.True(changes >= 1);           // listeners learn the session went away
         await holder.DisposeAsync();
     }

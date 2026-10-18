@@ -26,26 +26,6 @@ public class ClientViewModelTests
         public void Raise() => StateChanged?.Invoke();
     }
 
-    /// <summary>Records every write so tests can check that only finite, in-range values reach the session.</summary>
-    private sealed class RecordingControl : IClientSessionControl
-    {
-        private float _volume = 1f;
-        private double _offset;
-        public readonly List<float> VolumeWrites = new();
-        public readonly List<double> OffsetWrites = new();
-
-        public SyncState State => SyncState.Disconnected;
-        public event Action? StateChanged { add { } remove { } }
-        public float Volume { get => _volume; set { VolumeWrites.Add(value); _volume = value; } }
-        public double OffsetMs { get => _offset; set { OffsetWrites.Add(value); _offset = value; } }
-        public PlaybackStats? Stats => null;
-        public long OutputFailures => 0;
-        public Task LeaveAsync() => Task.CompletedTask;
-
-        /// <summary>Simulates the host overwriting the settings (no write recorded).</summary>
-        public void HostSets(float volume, double offset) { _volume = volume; _offset = offset; }
-    }
-
     private static ClientViewModel Make(Func<IPEndPoint, string, Task<JoinResult>>? join = null,
         IReadOnlyList<DiscoveredHost>? hosts = null, IClientSessionControl? control = null, Action<Action>? post = null)
         => new(() => hosts ?? new[] { HostA, HostB }, join ?? ((_, _) => Task.FromResult(new JoinResult(JoinOutcome.Joined))), control, post);
@@ -372,69 +352,71 @@ public class ClientViewModelTests
         Assert.Equal("Resyncs: 3 · Concealed frames: 7 · Late frames: 11", vm.CountersText);
     }
 
-    // ---- volume and offset -------------------------------------------------------------------------------------------
+    // ---- volume and offset (set on the host, shown read-only) ---------------------------------------------------------
 
     [Fact]
-    public void Volume_and_offset_are_clamped_and_never_pass_non_finite_values()
+    public void Volume_and_offset_cannot_be_written_from_the_client_tab()
     {
-        var control = new RecordingControl();
-        var vm = Make(control: control);
-
-        vm.Volume = 1.5f; Assert.Equal(1f, vm.Volume);
-        vm.Volume = -3f; Assert.Equal(0f, vm.Volume);
-        vm.Volume = 0.4f; Assert.Equal(0.4f, vm.Volume);
-        vm.Volume = float.NaN; Assert.Equal(0.4f, vm.Volume);
-        vm.Volume = float.PositiveInfinity; Assert.Equal(1f, vm.Volume);
-
-        vm.OffsetMs = 250; Assert.Equal(100, vm.OffsetMs);
-        vm.OffsetMs = -250; Assert.Equal(-100, vm.OffsetMs);
-        vm.OffsetMs = 12.5; Assert.Equal(12.5, vm.OffsetMs);
-        vm.OffsetMs = double.NaN; Assert.Equal(12.5, vm.OffsetMs);
-        vm.OffsetMs = double.NegativeInfinity; Assert.Equal(-100, vm.OffsetMs);
-
-        Assert.NotEmpty(control.VolumeWrites);
-        Assert.NotEmpty(control.OffsetWrites);
-        Assert.All(control.VolumeWrites, v => Assert.True(float.IsFinite(v) && v is >= 0f and <= 1f));
-        Assert.All(control.OffsetWrites, o => Assert.True(double.IsFinite(o) && o is >= -100 and <= 100));
+        Assert.False(typeof(ClientViewModel).GetProperty(nameof(ClientViewModel.Volume))!.SetMethod?.IsPublic ?? false);
+        Assert.False(typeof(ClientViewModel).GetProperty(nameof(ClientViewModel.OffsetMs))!.SetMethod?.IsPublic ?? false);
+        Assert.Null(typeof(IClientSessionControl).GetProperty(nameof(IClientSessionControl.Volume))!.SetMethod);
+        Assert.Null(typeof(IClientSessionControl).GetProperty(nameof(IClientSessionControl.OffsetMs))!.SetMethod);
+        Assert.Equal("Set on the host", ClientViewModel.SetOnHostText);
     }
 
     [Fact]
-    public void Volume_and_offset_are_pushed_to_the_session()
+    public void Refresh_shows_the_values_the_host_set()
     {
-        var control = new RecordingControl();
+        var control = new FakeControl();
         var vm = Make(control: control);
-        vm.Volume = 0.25f;
-        vm.OffsetMs = -40;
-        Assert.Equal(0.25f, control.Volume);
-        Assert.Equal(-40, control.OffsetMs);
-    }
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
-    [Fact]
-    public void Refresh_adopts_host_changed_values_without_writing_them_back()
-    {
-        var control = new RecordingControl();
-        var vm = Make(control: control);
-
-        control.HostSets(0.3f, 17);
+        control.Volume = 0.3f;
+        control.OffsetMs = 17;
         vm.Refresh();
 
         Assert.Equal(0.3f, vm.Volume);
         Assert.Equal(17, vm.OffsetMs);
-        Assert.Empty(control.VolumeWrites);
-        Assert.Empty(control.OffsetWrites);
+        Assert.Equal("Volume: 30%", vm.VolumeText);
+        Assert.Equal("Offset: +17 ms", vm.OffsetText);
+        Assert.Contains(nameof(ClientViewModel.VolumeText), changed);
+        Assert.Contains(nameof(ClientViewModel.OffsetText), changed);
+    }
+
+    [Fact]
+    public void Shown_values_are_clamped_and_never_non_finite()
+    {
+        var control = new FakeControl { Volume = 0.4f, OffsetMs = 12.5 };
+        var vm = Make(control: control);
+        Assert.Equal(0.4f, vm.Volume);
+        Assert.Equal(12.5, vm.OffsetMs);
+
+        control.Volume = float.NaN;
+        control.OffsetMs = double.NaN;
+        vm.Refresh();
+        Assert.Equal(0.4f, vm.Volume);
+        Assert.Equal(12.5, vm.OffsetMs);
+
+        control.Volume = 1.5f;
+        control.OffsetMs = -250;
+        vm.Refresh();
+        Assert.Equal(1f, vm.Volume);
+        Assert.Equal(-100, vm.OffsetMs);
     }
 
     [Fact]
     public void Volume_and_offset_text()
     {
-        var vm = Make();
-        vm.Volume = 0.8f;
-        vm.OffsetMs = 12.4;
+        var control = new FakeControl { Volume = 0.8f, OffsetMs = 12.4 };
+        var vm = Make(control: control);
         Assert.Equal("Volume: 80%", vm.VolumeText);
         Assert.Equal("Offset: +12 ms", vm.OffsetText);
-        vm.OffsetMs = -5;
+        control.OffsetMs = -5;
+        vm.Refresh();
         Assert.Equal("Offset: -5 ms", vm.OffsetText);
-        vm.OffsetMs = 0;
+        control.OffsetMs = 0;
+        vm.Refresh();
         Assert.Equal("Offset: 0 ms", vm.OffsetText);
     }
 

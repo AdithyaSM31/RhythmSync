@@ -11,8 +11,12 @@ public interface IClientSessionControl
     /// <summary>Raised on any thread when <see cref="State"/> changes.</summary>
     event Action? StateChanged;
 
-    float Volume { get; set; }
-    double OffsetMs { get; set; }
+    /// <summary>This PC's volume as the host set it (the host is the single source of truth; the client cannot change it).</summary>
+    float Volume { get; }
+
+    /// <summary>This PC's offset in ms as the host set it.</summary>
+    double OffsetMs { get; }
+
     PlaybackStats? Stats { get; }
 
     /// <summary>Times opening the audio device failed since the session was created.</summary>

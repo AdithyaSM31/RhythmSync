@@ -150,29 +150,19 @@ public sealed class ClientSession : IAsyncDisposable
     /// <summary>Raised on any thread when <see cref="State"/> changes.</summary>
     public event Action? StateChanged;
 
-    /// <summary>Linear volume 0..1 (clamped). Non-finite values throw. The host's SetDeviceSettings overwrites it.</summary>
+    /// <summary>Linear volume 0..1, as the host's SetDeviceSettings last set it (the host is the single source of truth).</summary>
     public float Volume
     {
         get { lock (_gate) return _volume; }
-        set
-        {
-            if (!float.IsFinite(value)) throw new ArgumentException("Volume must be a finite number.", nameof(value));
-            lock (_gate) ApplyVolumeLocked(value);
-        }
     }
 
     /// <summary>
-    /// Requested per-device offset in ms, ±100 (clamped; positive plays later). Non-finite values throw. The scheduler
-    /// further limits it by the current latency; the requested value is kept and re-applied when the latency changes.
+    /// Requested per-device offset in ms, ±100 (positive plays later), as the host's SetDeviceSettings last set it. The
+    /// scheduler further limits it by the current latency; the requested value is kept and re-applied when the latency changes.
     /// </summary>
     public double OffsetMs
     {
         get { lock (_gate) return _requestedOffsetMs; }
-        set
-        {
-            if (!double.IsFinite(value)) throw new ArgumentException("Offset must be a finite number.", nameof(value));
-            lock (_gate) ApplyOffsetLocked(value);
-        }
     }
 
     /// <summary>Playback statistics of the current pipeline; null until playback has started.</summary>

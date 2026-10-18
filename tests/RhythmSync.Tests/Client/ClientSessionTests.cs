@@ -370,12 +370,13 @@ public class ClientSessionTests
     {
         await using var rig = await HostRig.StartAsync(latencyMs: 100);
         var outputs = new FakeOutputFactory();
-        await using var client = NewClient(outputs);
+        var id = Guid.NewGuid();
+        await using var client = NewClient(outputs, id: id);
         await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
 
-        client.OffsetMs = -80;
-        Assert.Equal(-80, client.OffsetMs);
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80);
+        await TickUntil(() => client.OffsetMs == -80, client, TimeSpan.FromSeconds(1), () => rig);
         Assert.Equal(-50, SchedulerOf(outputs.Last).EffectiveOffsetMs, 6);   // ≥ −(100 − 50)
 
         await rig.Host.SetLatencyAsync(200);
@@ -388,10 +389,12 @@ public class ClientSessionTests
     {
         await using var rig = await HostRig.StartAsync(latencyMs: 100);
         var outputs = new FakeOutputFactory();
-        await using var client = NewClient(outputs);
+        var id = Guid.NewGuid();
+        await using var client = NewClient(outputs, id: id);
         await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
-        client.OffsetMs = -80;   // effective −50 at 100 ms latency
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80);   // effective −50 at 100 ms latency
+        await TickUntil(() => client.OffsetMs == -80, client, TimeSpan.FromSeconds(1), () => rig);
         var first = outputs.Last;
         Assert.Equal(48000, SchedulerOf(first).DeviceSampleRate);
 
@@ -536,20 +539,6 @@ public class ClientSessionTests
         await TickUntil(() => client.Volume == 1f && client.OffsetMs == -100 && client.IgnoredSettingsMessages == 2, client,
                         TimeSpan.FromSeconds(2));
         Assert.Equal(2, client.IgnoredSettingsMessages);
-    }
-
-    [Fact]
-    public async Task Local_settings_are_validated_and_clamped()
-    {
-        await using var client = NewClient(new FakeOutputFactory());
-
-        Assert.Throws<ArgumentException>(() => client.Volume = float.NaN);
-        Assert.Throws<ArgumentException>(() => client.OffsetMs = double.NegativeInfinity);
-        client.Volume = -1;
-        client.OffsetMs = 250;
-
-        Assert.Equal(0f, client.Volume);
-        Assert.Equal(100, client.OffsetMs);
     }
 
     [Fact]
