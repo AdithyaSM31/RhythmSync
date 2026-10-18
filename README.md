@@ -34,7 +34,7 @@ dotnet test --filter "Category=Smoke"                       # 30 s real-time UDP
 dotnet test --filter "Category=Hardware"                    # needs real audio devices
 ```
 
-On first run the app adds a Windows Firewall rule (inbound, this program, Private profile only) by running `netsh` elevated, which shows one UAC prompt. To skip it, for example if you manage the firewall yourself:
+On first run the app adds a Windows Firewall rule (inbound, this program, Private profile only) by running `netsh` elevated, which shows a UAC prompt. The prompt comes back on each launch until you accept it once. To skip it, for example if you manage the firewall yourself:
 
 ```
 dotnet run --project src/RhythmSync.App -- --skip-firewall
@@ -59,7 +59,7 @@ The target latency (default 200 ms, 100 to 500 ms) is set on the host. Raise it 
 
 ## Tuning the offset
 
-The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and move the offset slider on one PC until the clicks line up. Automatic calibration is planned as sub-project 3.
+The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and move the offset slider on a client (Client tab, or that client's row on the host) until its clicks line up with the host's. The host's own speakers have a fixed offset of 0 and no slider, so tune each client against the host. Automatic calibration is planned as sub-project 3.
 
 ## Ports
 
