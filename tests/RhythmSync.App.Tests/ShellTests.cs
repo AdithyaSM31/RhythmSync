@@ -325,6 +325,66 @@ public class ShellTests
     public void Maximize_hit_test_misses_an_empty_rect()
         => Assert.False(WindowChromeHelper.HitTest(Rect.Empty, new Point(0, 0)));
 
+    // ---- maximize click tracking (non-client button down/up pairs) --------------------------------------------------
+
+    [Fact]
+    public void Maximize_ignores_an_orphan_release()
+    {
+        var tracker = new MaxButtonClickTracker();
+
+        Assert.False(tracker.OnUp());   // pressed elsewhere, dragged onto Maximize, released there
+    }
+
+    [Fact]
+    public void Maximize_clicks_on_a_press_and_release()
+    {
+        var tracker = new MaxButtonClickTracker();
+
+        tracker.OnDown();
+
+        Assert.True(tracker.OnUp());
+        Assert.False(tracker.OnUp());   // one press, one click
+    }
+
+    [Fact]
+    public void Maximize_does_not_click_when_the_pointer_left_between_press_and_release()
+    {
+        var tracker = new MaxButtonClickTracker();
+
+        tracker.OnDown();
+        tracker.OnLeave();   // dragged off the button (WM_NCMOUSELEAVE, or a hit test that misses it)
+
+        Assert.False(tracker.OnUp());
+    }
+
+    [Fact]
+    public void Maximize_double_click_toggles_exactly_once()
+    {
+        var tracker = new MaxButtonClickTracker();
+        int clicks = 0;
+
+        // Windows sends down, up, dblclk, up for a double-click; the double-click message is not a press.
+        tracker.OnDown();
+        if (tracker.OnUp()) clicks++;
+        tracker.OnDoubleClick();
+        if (tracker.OnUp()) clicks++;
+
+        Assert.Equal(1, clicks);
+    }
+
+    [Fact]
+    public void Maximize_clicks_again_on_a_later_press()
+    {
+        var tracker = new MaxButtonClickTracker();
+        tracker.OnDown();
+        tracker.OnLeave();
+        tracker.OnUp();
+
+        tracker.OnDown();
+
+        Assert.True(tracker.OnUp());
+    }
+
     [Theory]
     [InlineData(0x0020_0010, 16, 32)]
     [InlineData(unchecked((int)0xFFF6_FFEC), -20, -10)]   // a monitor left of and above the primary one

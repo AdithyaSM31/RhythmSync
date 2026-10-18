@@ -19,6 +19,7 @@ public static class WindowChromeHelper
     private const int WM_NCMOUSEMOVE = 0x00A0;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
     private const int WM_NCLBUTTONUP = 0x00A2;
+    private const int WM_NCLBUTTONDBLCLK = 0x00A3;
     private const int WM_NCMOUSELEAVE = 0x02A2;
     private const int HTMAXBUTTON = 9;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
@@ -43,8 +44,9 @@ public static class WindowChromeHelper
             {
                 var hwnd = new WindowInteropHelper(window).Handle;
                 UseDarkFrame(hwnd);
+                var tracker = new MaxButtonClickTracker();
                 HwndSource.FromHwnd(hwnd)?.AddHook((IntPtr _, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-                    => WndProc(maximizeButton, msg, wParam, lParam, ref handled));
+                    => WndProc(maximizeButton, tracker, msg, wParam, lParam, ref handled));
             }
             catch (Exception e)
             {
@@ -66,7 +68,7 @@ public static class WindowChromeHelper
         return new Point((short)(value & 0xFFFF), (short)((value >> 16) & 0xFFFF));
     }
 
-    private static IntPtr WndProc(FrameworkElement button, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private static IntPtr WndProc(FrameworkElement button, MaxButtonClickTracker tracker, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         try
         {
@@ -79,20 +81,28 @@ public static class WindowChromeHelper
                         return new IntPtr(HTMAXBUTTON);
                     }
                     SetIsNonClientHover(button, false);
+                    tracker.OnLeave();
                     break;
                 case WM_NCMOUSEMOVE:
                     SetIsNonClientHover(button, wParam.ToInt64() == HTMAXBUTTON);
                     break;
                 case WM_NCMOUSELEAVE:
                     SetIsNonClientHover(button, false);
+                    tracker.OnLeave();
                     break;
                 case WM_NCLBUTTONDOWN when wParam.ToInt64() == HTMAXBUTTON:
                     handled = true;   // no system tracking loop: the click happens on release, like a WPF button
+                    tracker.OnDown();
+                    break;
+                case WM_NCLBUTTONDBLCLK when wParam.ToInt64() == HTMAXBUTTON:
+                    handled = true;   // not a press: the first click of the pair already toggled the window
+                    tracker.OnDoubleClick();
                     break;
                 case WM_NCLBUTTONUP when wParam.ToInt64() == HTMAXBUTTON:
                     handled = true;
                     SetIsNonClientHover(button, false);
-                    if (button.IsEnabled) button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, button));
+                    // Only a release that ends a press on the button is a click, never one after a drag from elsewhere.
+                    if (tracker.OnUp() && button.IsEnabled) button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, button));
                     break;
             }
         }
