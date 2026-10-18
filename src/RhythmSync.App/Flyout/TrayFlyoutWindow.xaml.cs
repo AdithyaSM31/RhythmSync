@@ -9,7 +9,8 @@ using RhythmSync.App.Controls;
 namespace RhythmSync.App.Flyout;
 
 /// <summary>
-/// The tray flyout window (spec §5): borderless, topmost, 320 px wide and as tall as its content up to the working area.
+/// The tray flyout window (spec §5): borderless, topmost and as tall as its content up to the working area. The visible
+/// panel is 320 px wide; the transparent window is 336 px, <see cref="ShadowMargin"/> wider on each side for the shadow.
 /// The tray icon's left click calls <see cref="ToggleFromTray"/>; a click elsewhere (deactivation), Esc, or one of the
 /// view model's actions hides it again. It is created once and hidden, never closed, while the app runs.
 /// </summary>

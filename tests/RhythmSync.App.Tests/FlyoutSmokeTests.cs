@@ -104,13 +104,18 @@ public sealed class FlyoutSmokeTests
     {
         UiDispatcher.Run(() =>
         {
-            var window = new Rig().Window;
+            var rig = new Rig();
+            var window = rig.Window;
+            rig.Layout();
 
             Assert.Equal(WindowStyle.None, window.WindowStyle);
             Assert.True(window.AllowsTransparency);
             Assert.True(window.Topmost);
             Assert.False(window.ShowInTaskbar);
-            Assert.Equal(320, window.Width);
+            // Ruling U9: the visible panel is 320 px; the window adds the 8 px shadow margin on each side.
+            Assert.Equal(336, window.Width);
+            Assert.Equal(TrayFlyoutWindow.ShadowMargin, window.Root.Margin.Left);
+            Assert.Equal(320, window.Surface.ActualWidth);
             Assert.Equal(SizeToContent.Height, window.SizeToContent);
             Assert.Equal(Application.Current.FindResource("FontUi"), window.FontFamily);
             Assert.Equal(Application.Current.FindResource("TextBrush"), window.Foreground);

@@ -5,12 +5,12 @@
         xmlns:f="clr-namespace:RhythmSync.App.Flyout"
         xmlns:vm="clr-namespace:RhythmSync.App.ViewModels"
         Style="{StaticResource StudioWindow}"
-        Title="RhythmSync" Width="320" SizeToContent="Height"
+        Title="RhythmSync" Width="336" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
         Topmost="True" ShowInTaskbar="False" ShowActivated="True"
         AutomationProperties.Name="RhythmSync quick controls">
-    <!-- The tray flyout (spec §5, flyout.html). DataContext: a TrayFlyoutViewModel. The panel sits ShadowMargin (8 px)
-         inside the transparent window, which leaves room for its shadow. -->
+    <!-- The tray flyout (spec §5, flyout.html). DataContext: a TrayFlyoutViewModel. The 320 px panel sits ShadowMargin (8 px)
+         inside the 336 px transparent window, which leaves room for its shadow. -->
     <Window.Resources>
         <SolidColorBrush x:Key="FlyoutSurfaceBrush" Color="#12141A" />
 
@@ -58,7 +58,7 @@
         </Grid.RenderTransform>
 
         <!-- The surface and its shadow, apart from the content so the text is not rendered through the effect. -->
-        <Border Background="{StaticResource FlyoutSurfaceBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+        <Border x:Name="Surface" Background="{StaticResource FlyoutSurfaceBrush}" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
                 CornerRadius="14" SnapsToDevicePixels="True">
             <Border.Effect>
                 <DropShadowEffect Color="Black" BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.55" />
