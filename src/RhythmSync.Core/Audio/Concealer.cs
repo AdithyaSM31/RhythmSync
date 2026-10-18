@@ -14,7 +14,6 @@ public sealed class Concealer
     public const int MaxConcealFrames = 10;
 
     private const int Channels = AudioFormat.Channels;
-    private const int FrameSamples = AudioFormat.FrameSamples;
     private const int FrameFloats = AudioFormat.FrameFloats;
 
     private readonly float[] _lastGood = new float[FrameFloats];

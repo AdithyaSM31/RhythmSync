@@ -13,8 +13,6 @@ namespace RhythmSync.App.ViewModels;
 /// </summary>
 public sealed partial class HostTabViewModel : ObservableObject
 {
-    public const string DefaultSpeakersText = "Windows default";
-
     private readonly IHostRuntime _runtime;
     private bool _syncingSpeaker;
 
