@@ -89,6 +89,25 @@ public class FlyoutPlacementTests
     }
 
     [Fact]
+    public void At_150_percent_the_visible_panel_keeps_its_gap_inside_the_work_area()
+    {
+        // A 2560x1600 screen at 150% with a 48 px bottom taskbar, in DIPs (48 / 1.5 = 32).
+        var screen = new Rect(0, 0, 2560 / 1.5, 1600 / 1.5);
+        var work = new Rect(0, 0, 2560 / 1.5, (1600 - 48) / 1.5);
+        var window = new Size(336, 400);   // the 320 px panel plus the shadow margin on each side
+
+        // The same arithmetic as TrayFlyoutWindow.Place: the window keeps the 12 px gap less the shadow margin.
+        double shadow = TrayFlyoutWindow.ShadowMargin;
+        var (topLeft, height) = FlyoutPlacement.Compute(work, screen, window, 12 - shadow);
+
+        AssertInside(work, topLeft, window.Width, height);
+        var panel = new Rect(topLeft.X + shadow, topLeft.Y + shadow, window.Width - 2 * shadow, height - 2 * shadow);
+        Assert.Equal(320, panel.Width);
+        Assert.Equal(12, work.Right - panel.Right, 6);
+        Assert.Equal(12, work.Bottom - panel.Bottom, 6);
+    }
+
+    [Fact]
     public void Flyout_wider_than_a_tiny_work_area_still_starts_inside_it()
     {
         var work = new Rect(100, 50, 300, 200);
