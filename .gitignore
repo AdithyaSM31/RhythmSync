@@ -480,3 +480,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Superpowers scratch (brainstorm mockups, SDD workspaces)
+.superpowers/

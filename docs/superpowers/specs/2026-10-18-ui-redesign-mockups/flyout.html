@@ -1,0 +1,64 @@
+<h2>Design section 3 · The tray flyout</h2>
+<p class="subtitle">Left-click the tray icon to open it; right-click keeps the classic menu (Show/Hide, Quit). 320 px wide, anchored above the tray, slides up 150 ms, closes when you click elsewhere or press Esc.</p>
+
+<style>
+  .f { font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; width: 300px; background: #12141a; color: #e8e9ee; border: 1px solid #262a36; border-radius: 14px; padding: 14px; font-size: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.55); display: flex; flex-direction: column; gap: 9px; }
+  .f .muted { color: #8a8f9c; font-size: 11px; }
+  .f .row { display: flex; align-items: center; gap: 8px; }
+  .f .h { font-size: 14px; font-weight: 600; }
+  .f .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .f .chip i { width: 6px; height: 6px; border-radius: 50%; }
+  .f .ok { background: rgba(79,209,197,.13); color: #4fd1c5; } .f .ok i { background: #4fd1c5; box-shadow: 0 0 7px #4fd1c5; }
+  .f .cn { background: #1d2029; color: #8a8f9c; } .f .cn i { background: #8a8f9c; }
+  .f .item { background: #161921; border: 1px solid #232733; border-radius: 10px; padding: 8px 10px; }
+  .f .track { height: 4px; border-radius: 2px; background: #262a36; position: relative; flex: 1; }
+  .f .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, #8b7cff, #4fd1c5); }
+  .f .track b { position: absolute; top: -4px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #fff; }
+  .f .code { font-size: 20px; font-weight: 600; letter-spacing: 5px; text-shadow: 0 0 14px rgba(139,124,255,.45); }
+  .f .btns { display: flex; gap: 8px; margin-top: 2px; }
+  .f .btn { flex: 1; text-align: center; padding: 7px; border-radius: 9px; font-weight: 600; font-size: 11px; }
+  .f .p { background: #8b7cff; color: #0e0f13; } .f .s2 { background: #1d2029; border: 1px solid #2a2e3b; } .f .d { background: rgba(255,107,122,.12); color: #ff8b97; border: 1px solid rgba(255,107,122,.3); }
+  .f .dot { width: 7px; height: 7px; border-radius: 50%; background: #4fd1c5; box-shadow: 0 0 7px #4fd1c5; }
+  .stage { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+  .lbl { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #444; }
+</style>
+
+<div class="stage">
+  <div>
+    <div class="lbl">Hosting</div>
+    <div class="f">
+      <div class="row"><span class="h">Living Room</span><span class="chip ok"><i></i>Hosting</span><span class="code" style="margin-left:auto">4729</span></div>
+      <div class="item"><div class="row"><span class="dot"></span><b>Kitchen Laptop</b><span class="muted" style="margin-left:auto">0.21 ms</span></div><div class="row" style="margin-top:6px"><span class="muted">🔊</span><div class="track"><i style="width:80%"></i><b style="left:80%"></b></div><span class="muted">80%</span></div></div>
+      <div class="item"><div class="row"><span class="dot" style="background:#f5b94a;box-shadow:none"></span><b>Study PC</b><span class="muted" style="margin-left:auto;color:#f5b94a">degraded</span></div><div class="row" style="margin-top:6px"><span class="muted">🔊</span><div class="track"><i style="width:60%"></i><b style="left:60%"></b></div><span class="muted">60%</span></div></div>
+      <div class="btns"><div class="btn d">Stop hosting</div><div class="btn s2">Open RhythmSync</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">Joined (client)</div>
+    <div class="f">
+      <div class="row"><span class="h">Living Room</span><span class="chip ok"><i></i>In sync</span></div>
+      <div class="item"><div class="muted">Sync error <b style="color:#e8e9ee">0.21 ms</b> · Drift <b style="color:#e8e9ee">+42 ppm</b></div><div class="muted" style="margin-top:4px">Volume 80% · Offset +10 ms · <i>Set on the host</i></div></div>
+      <div class="btns"><div class="btn s2">Leave</div><div class="btn s2">Open RhythmSync</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lbl">Idle</div>
+    <div class="f">
+      <div class="row"><span class="h">RhythmSync</span><span class="chip cn"><i></i>Not connected</span></div>
+      <div class="muted">Host this PC's audio, or join a host from the app.</div>
+      <div class="btns"><div class="btn p">Open RhythmSync</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:14px">
+<h3>Window behaviour</h3>
+<ul>
+  <li><b>Custom title bar</b>: dark, with the app icon and name, plus minimize, maximize and close. Close hides to the tray, as today. Windows 11 snap layouts and the rounded corners still work.</li>
+  <li><b>Flyout position</b>: bottom-right of the working area on the monitor with the tray, so it sits above the taskbar wherever the taskbar is. It respects DPI scaling. Only one flyout at a time; clicking the icon again closes it.</li>
+  <li><b>Flyout volume sliders</b> drive the same host per-device volume as the main window (one source of truth, saved the same way).</li>
+  <li><b>Keyboard</b>: everything reachable with Tab, a visible violet focus ring, and Esc closes the flyout.</li>
+</ul>
+</div>

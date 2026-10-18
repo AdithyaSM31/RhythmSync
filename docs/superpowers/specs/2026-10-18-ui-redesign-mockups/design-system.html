@@ -1,0 +1,90 @@
+<h2>Design section 1 · The design system</h2>
+<p class="subtitle">Every screen is built from these tokens and components. Does this feel right?</p>
+
+<style>
+  .ds { font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; background: #0e0f13; color: #e8e9ee; border-radius: 12px; padding: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; font-size: 13px; }
+  .ds h4 { margin: 0 0 10px; font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: #8a8f9c; font-weight: 600; }
+  .sw { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sw div { width: 64px; font-size: 10px; color: #8a8f9c; }
+  .sw span { display: block; height: 34px; border-radius: 8px; border: 1px solid #232733; margin-bottom: 4px; }
+  .card { background: #161921; border: 1px solid #232733; border-radius: 12px; padding: 14px 16px; }
+  .btn { display: inline-block; padding: 8px 16px; border-radius: 9px; font-weight: 600; font-size: 13px; margin: 0 6px 6px 0; }
+  .p { background: #8b7cff; color: #0e0f13; box-shadow: 0 4px 18px rgba(139,124,255,.35); }
+  .s2 { background: #1d2029; color: #e8e9ee; border: 1px solid #2a2e3b; }
+  .g { color: #b4abff; }
+  .d { background: rgba(255,107,122,.12); color: #ff8b97; border: 1px solid rgba(255,107,122,.3); }
+  .track { height: 4px; border-radius: 2px; background: #262a36; position: relative; margin: 14px 0; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 2px; background: linear-gradient(90deg, #8b7cff, #4fd1c5); }
+  .track b { position: absolute; left: 62%; top: -6px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(139,124,255,.25); }
+  .tg { width: 38px; height: 20px; border-radius: 10px; position: relative; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .tg.on { background: linear-gradient(90deg, #8b7cff, #4fd1c5); } .tg.off { background: #262a36; }
+  .tg i { position: absolute; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+  .tg.on i { right: 3px; } .tg.off i { left: 3px; background: #8a8f9c; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px; margin: 0 6px 6px 0; }
+  .chip i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .ok { background: rgba(79,209,197,.13); color: #4fd1c5; } .ok i { background: #4fd1c5; box-shadow: 0 0 8px #4fd1c5; }
+  .sy { background: rgba(139,124,255,.14); color: #b4abff; } .sy i { background: #8b7cff; box-shadow: 0 0 8px #8b7cff; }
+  .dg { background: rgba(245,185,74,.13); color: #f5b94a; } .dg i { background: #f5b94a; }
+  .cn { background: #1d2029; color: #8a8f9c; } .cn i { background: #8a8f9c; }
+  .off2 { background: rgba(255,107,122,.12); color: #ff8b97; } .off2 i { background: #ff6b7a; }
+  .banner { display: flex; gap: 10px; align-items: center; background: rgba(245,185,74,.08); border: 1px solid rgba(245,185,74,.25); border-left: 3px solid #f5b94a; border-radius: 10px; padding: 10px 12px; font-size: 12px; }
+  .pin { display: flex; gap: 8px; }
+  .pin span { width: 40px; height: 48px; border-radius: 10px; background: #161921; border: 1px solid #232733; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 600; }
+  .pin span.f { border-color: #8b7cff; box-shadow: 0 0 0 3px rgba(139,124,255,.2); }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+  .nav { padding: 8px 12px; border-radius: 8px; display: flex; gap: 10px; align-items: center; margin-bottom: 4px; }
+  .nav.on { background: #1d2029; color: #b4abff; box-shadow: inset 3px 0 0 #8b7cff; }
+</style>
+
+<div class="ds">
+  <div>
+    <h4>Colour</h4>
+    <div class="sw">
+      <div><span style="background:#0e0f13"></span>Background<br>#0E0F13</div>
+      <div><span style="background:#14161c"></span>Surface<br>#14161C</div>
+      <div><span style="background:#161921"></span>Card<br>#161921</div>
+      <div><span style="background:#1d2029"></span>Raised<br>#1D2029</div>
+      <div><span style="background:#8b7cff"></span>Violet<br>#8B7CFF</div>
+      <div><span style="background:#4fd1c5"></span>Teal<br>#4FD1C5</div>
+      <div><span style="background:#f5b94a"></span>Warning<br>#F5B94A</div>
+      <div><span style="background:#ff6b7a"></span>Danger<br>#FF6B7A</div>
+    </div>
+  </div>
+  <div>
+    <h4>Type · Segoe UI Variable</h4>
+    <div style="font-size:30px;font-weight:600;letter-spacing:8px;text-shadow:0 0 18px rgba(139,124,255,.45)">4729</div>
+    <div style="font-size:20px;font-weight:600">Page title</div>
+    <div style="font-size:14px;font-weight:600">Section heading</div>
+    <div>Body text for labels and descriptions</div>
+    <div style="font-size:11px;color:#8a8f9c">Caption · secondary info</div>
+    <div class="mono" style="color:#8a8f9c">Sync error 0.21 ms · Drift 42 ppm</div>
+  </div>
+
+  <div>
+    <h4>Buttons</h4>
+    <span class="btn p">Start hosting</span><span class="btn s2">Leave</span><span class="btn g">Open sound settings</span><span class="btn d">Stop hosting</span>
+    <h4 style="margin-top:12px">Slider · Toggle</h4>
+    <div class="track"><i></i><b></b></div>
+    <div><span class="tg on"><i></i></span>Start with Windows</div>
+    <div style="margin-top:6px;color:#8a8f9c"><span class="tg off"><i></i></span>Start minimized</div>
+  </div>
+  <div>
+    <h4>Status chips</h4>
+    <span class="chip ok"><i></i>In sync</span><span class="chip sy"><i></i>Syncing…</span><span class="chip dg"><i></i>Sync is degraded</span><span class="chip cn"><i></i>Connecting…</span><span class="chip off2"><i></i>Not connected</span>
+    <div class="muted" style="font-size:11px;color:#8a8f9c">"Syncing" gently pulses; "In sync" has a soft glow.</div>
+    <h4 style="margin-top:12px">Banner</h4>
+    <div class="banner"><span>⚠</span><span style="flex:1">Set 'CABLE Input' as the default playback device so this PC plays in sync.</span><span class="btn g" style="margin:0;padding:4px 8px">Open sound settings</span></div>
+  </div>
+
+  <div>
+    <h4>Pairing-code entry</h4>
+    <div class="pin"><span>4</span><span>7</span><span class="f">2</span><span style="color:#3a3f4d">·</span></div>
+    <div style="font-size:11px;color:#8a8f9c;margin-top:6px">Four boxes, digits only, auto-advance, paste-friendly.</div>
+  </div>
+  <div>
+    <h4>Navigation · Card</h4>
+    <div class="nav on">◉ Host</div><div class="nav">⇣ Join</div>
+    <div class="card" style="margin-top:8px"><div style="font-size:11px;color:#8a8f9c">Cards</div>12 px radius, 1 px hairline border, no heavy shadows.</div>
+  </div>
+</div>
+<p class="subtitle" style="margin-top:12px">Icons come from Windows' built-in Segoe Fluent Icons font, falling back to Segoe MDL2 Assets on Windows 10. Motion is 120–200 ms ease-out on hover and press, the flyout slides in, and the "Syncing" chip pulses.</p>

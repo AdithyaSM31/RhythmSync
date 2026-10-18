@@ -1,0 +1,123 @@
+<h2>Design section 2 · The screens</h2>
+<p class="subtitle">The sidebar window at ~900×600 (resizable, minimum 760×520). Every current control and message is kept. Click any screen to comment on it.</p>
+
+<style>
+  .w { font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; background: #0e0f13; color: #e8e9ee; border-radius: 10px; overflow: hidden; font-size: 11px; border: 1px solid #232733; }
+  .tb { height: 26px; display: flex; align-items: center; padding: 0 10px; gap: 8px; background: #0e0f13; border-bottom: 1px solid #1a1d25; font-size: 10px; color: #8a8f9c; }
+  .tb .x { margin-left: auto; letter-spacing: 10px; }
+  .body { display: flex; height: 330px; }
+  .side { width: 104px; background: #14161c; border-right: 1px solid #1f2229; padding: 10px 7px; display: flex; flex-direction: column; gap: 3px; }
+  .side .nav { padding: 7px 9px; border-radius: 7px; color: #b6bac4; }
+  .side .nav.on { background: #1d2029; color: #b4abff; box-shadow: inset 3px 0 0 #8b7cff; }
+  .side .foot { margin-top: auto; padding: 8px 9px; border-radius: 8px; background: #161921; border: 1px solid #232733; font-size: 9px; color: #8a8f9c; }
+  .main { flex: 1; padding: 14px 16px; overflow: hidden; display: flex; flex-direction: column; gap: 9px; }
+  .h1 { font-size: 16px; font-weight: 600; }
+  .muted { color: #8a8f9c; font-size: 10px; }
+  .card { background: #161921; border: 1px solid #232733; border-radius: 11px; padding: 10px 12px; }
+  .code { font-size: 26px; font-weight: 600; letter-spacing: 7px; text-shadow: 0 0 16px rgba(139,124,255,.45); }
+  .btn { display: inline-block; padding: 6px 12px; border-radius: 8px; font-weight: 600; }
+  .p { background: #8b7cff; color: #0e0f13; box-shadow: 0 3px 14px rgba(139,124,255,.35); }
+  .s2 { background: #1d2029; border: 1px solid #2a2e3b; }
+  .d { background: rgba(255,107,122,.12); color: #ff8b97; border: 1px solid rgba(255,107,122,.3); }
+  .gh { color: #b4abff; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .chip i { width: 6px; height: 6px; border-radius: 50%; }
+  .ok { background: rgba(79,209,197,.13); color: #4fd1c5; } .ok i { background: #4fd1c5; box-shadow: 0 0 7px #4fd1c5; }
+  .dg { background: rgba(245,185,74,.13); color: #f5b94a; } .dg i { background: #f5b94a; }
+  .track { height: 4px; border-radius: 2px; background: #262a36; position: relative; flex: 1; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: linear-gradient(90deg, #8b7cff, #4fd1c5); }
+  .track b { position: absolute; top: -4px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #fff; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .input { background: #0e0f13; border: 1px solid #2a2e3b; border-radius: 8px; padding: 6px 9px; color: #e8e9ee; }
+  .banner { display: flex; gap: 8px; align-items: center; background: rgba(245,185,74,.08); border: 1px solid rgba(245,185,74,.25); border-left: 3px solid #f5b94a; border-radius: 9px; padding: 7px 10px; }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; color: #8a8f9c; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px solid #232733; }
+  .stats div { font-size: 9px; color: #8a8f9c; } .stats b { display: block; font-family: "Cascadia Mono", Consolas, monospace; color: #e8e9ee; font-size: 10px; font-weight: 500; }
+  .pin { display: flex; gap: 6px; } .pin span { width: 30px; height: 36px; border-radius: 8px; background: #161921; border: 1px solid #232733; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; }
+  .tg { width: 30px; height: 16px; border-radius: 8px; position: relative; display: inline-block; } .tg i { position: absolute; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+  .tg.on { background: linear-gradient(90deg,#8b7cff,#4fd1c5); } .tg.on i { right: 2px; } .tg.off { background: #262a36; } .tg.off i { left: 2px; background: #8a8f9c; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cap { font-size: 12px; font-weight: 600; margin: 4px 0 6px; color: #444; }
+  .sel { outline: 1px solid #8b7cff; }
+</style>
+
+<div class="grid2">
+<div data-choice="host-running" onclick="toggleSelect(this)">
+<div class="cap">1 · Host, running</div>
+<div class="w"><div class="tb">♪ RhythmSync<span class="x">–☐✕</span></div><div class="body">
+  <div class="side"><div class="nav on">◉ Host</div><div class="nav">⇣ Join</div><div class="nav" style="margin-top:auto">⚙ Settings</div><div class="foot">Hosting · 2 in sync</div></div>
+  <div class="main">
+    <div class="row"><span class="h1">Living Room</span><span class="chip ok"><i></i>Hosting</span><span style="margin-left:auto" class="btn d">Stop hosting</span></div>
+    <div class="banner"><span>⚠</span><span style="flex:1">Set 'CABLE Input' as the default playback device so this PC plays in sync.</span><span class="gh">Open sound settings</span></div>
+    <div class="row" style="gap:9px;align-items:stretch">
+      <div class="card" style="flex:1"><div class="muted">Pairing code</div><div class="code">4729</div><div class="muted">Share this with the other PCs</div></div>
+      <div class="card" style="flex:1.4;display:flex;flex-direction:column;gap:7px">
+        <div class="row"><span class="muted" style="width:70px">Latency</span><div class="track"><i style="width:25%"></i><b style="left:25%"></b></div><span>200 ms</span></div>
+        <div class="muted">Higher latency is more robust on a weak Wi-Fi connection.</div>
+        <div class="row"><span class="muted" style="width:70px">Play here on</span><span class="input" style="flex:1">Speakers (Realtek) ▾</span></div>
+      </div>
+    </div>
+    <div class="row"><b>Connected PCs</b><span class="muted">2</span><span style="margin-left:auto" class="muted">Show stats</span><span class="tg on"><i></i></span></div>
+    <div class="card">
+      <div class="row"><b style="width:86px">Kitchen Laptop</b><span class="chip ok"><i></i>In sync</span><span class="mono">0.21 ms</span></div>
+      <div class="row" style="margin-top:7px"><span class="muted" style="width:44px">Volume</span><div class="track"><i style="width:80%"></i><b style="left:80%"></b></div><span style="width:34px">80%</span><span class="muted" style="width:40px;text-align:right">Offset</span><div class="track"><i style="width:55%"></i><b style="left:55%"></b></div><span style="width:40px">+10 ms</span></div>
+      <div class="stats"><div>Sync error<b>0.21 ms</b></div><div>Packet loss<b>0.0 %</b></div><div>Late<b>0.1 %</b></div><div>Drift<b>42 ppm</b></div><div>Fit residual<b>0.18 ms</b></div></div>
+    </div>
+    <div class="card"><div class="row"><b style="width:86px">Study PC</b><span class="chip dg"><i></i>Sync is degraded</span><span class="mono">—</span><span style="margin-left:auto;color:#f5b94a;font-size:10px">Wi-Fi congested – try higher latency</span></div></div>
+  </div></div></div>
+</div>
+
+<div data-choice="host-setup" onclick="toggleSelect(this)">
+<div class="cap">2 · Host, not started</div>
+<div class="w"><div class="tb">♪ RhythmSync<span class="x">–☐✕</span></div><div class="body">
+  <div class="side"><div class="nav on">◉ Host</div><div class="nav">⇣ Join</div><div class="nav" style="margin-top:auto">⚙ Settings</div><div class="foot">Idle</div></div>
+  <div class="main" style="justify-content:center;align-items:center">
+    <div class="card" style="width:300px;padding:18px 20px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:30px;text-align:center;color:#8b7cff;text-shadow:0 0 20px rgba(139,124,255,.5)">◉</div>
+      <div class="h1" style="text-align:center">Share this PC's audio</div>
+      <div class="muted" style="text-align:center">Other PCs on your Wi-Fi can join with the pairing code and play in sync.</div>
+      <div class="muted">Session name</div><div class="input">Living Room</div>
+      <div class="muted">Play on this PC through</div><div class="input">Speakers (Realtek) ▾</div>
+      <div class="btn p" style="text-align:center">Start hosting</div>
+    </div>
+  </div></div></div>
+</div>
+
+<div data-choice="join" onclick="toggleSelect(this)">
+<div class="cap">3 · Join (before → after joining)</div>
+<div class="w"><div class="tb">♪ RhythmSync<span class="x">–☐✕</span></div><div class="body">
+  <div class="side"><div class="nav">◉ Host</div><div class="nav on">⇣ Join</div><div class="nav" style="margin-top:auto">⚙ Settings</div><div class="foot">Not connected</div></div>
+  <div class="main">
+    <div class="h1">Join a host</div>
+    <div class="muted">Hosts on this network</div>
+    <div class="card row" style="border-color:#8b7cff;box-shadow:0 0 0 3px rgba(139,124,255,.15)"><span style="color:#8b7cff">◉</span><b>Living Room</b><span class="muted">192.168.1.24</span><span class="muted" style="margin-left:auto">selected</span></div>
+    <div class="card row"><span class="muted">◉</span><b>Office PC</b><span class="muted">192.168.1.31</span></div>
+    <div class="row" style="margin-top:4px"><span class="muted" style="width:40px">Code</span><div class="pin"><span>4</span><span>7</span><span>2</span><span>9</span></div><span class="btn p" style="margin-left:auto">Join</span></div>
+    <div class="card" style="margin-top:4px">
+      <div class="row"><b>Joined · Living Room</b><span class="chip ok"><i></i>In sync</span><span class="btn s2" style="margin-left:auto">Leave</span></div>
+      <div class="mono" style="margin-top:6px">Sync error 0.21 ms · Drift correction +42 ppm · Resyncs 0 · Concealed 3 · Late 0</div>
+      <div class="row" style="margin-top:6px"><span class="muted">Volume 80% · Offset +10 ms</span><span class="muted" style="margin-left:auto;font-style:italic">Set on the host</span></div>
+    </div>
+  </div></div></div>
+</div>
+
+<div data-choice="settings" onclick="toggleSelect(this)">
+<div class="cap">4 · Settings</div>
+<div class="w"><div class="tb">♪ RhythmSync<span class="x">–☐✕</span></div><div class="body">
+  <div class="side"><div class="nav">◉ Host</div><div class="nav">⇣ Join</div><div class="nav on" style="margin-top:auto">⚙ Settings</div><div class="foot">Idle</div></div>
+  <div class="main">
+    <div class="h1">Settings</div>
+    <div class="card" style="display:flex;flex-direction:column;gap:9px">
+      <div class="row"><div style="flex:1"><b>This PC's name</b><div class="muted">Shown to the host and other PCs</div></div><span class="input" style="width:130px">Kitchen Laptop</span></div>
+      <div class="row"><div style="flex:1"><b>Start with Windows</b><div class="muted">Launch RhythmSync when you sign in</div></div><span class="tg on"><i></i></span></div>
+      <div class="row"><div style="flex:1"><b>Start minimized</b><div class="muted">Open straight to the tray</div></div><span class="tg off"><i></i></span></div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:6px">
+      <b>About</b>
+      <div class="muted">RhythmSync 0.1.0 · Core sync engine</div>
+      <div class="row"><span class="btn s2">Open log folder</span><span class="btn s2">Open settings folder</span></div>
+    </div>
+  </div></div></div>
+</div>
+</div>
+<p class="subtitle" style="margin-top:10px">The public-network warning and "This PC is hosting – stop hosting to join another host." appear as banners at the top of the Join page. The sidebar footer always shows the current state.</p>
