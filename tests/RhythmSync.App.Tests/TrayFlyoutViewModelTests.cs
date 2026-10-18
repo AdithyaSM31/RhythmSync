@@ -118,7 +118,7 @@ public class TrayFlyoutViewModelTests
         Assert.Equal("RhythmSync", rig.Vm.Title);
         Assert.Null(rig.Vm.PairingCode);
         Assert.Empty(rig.Vm.Clients);
-        Assert.Equal((StatusKind.NotConnected, "Not connected"), (rig.Vm.ChipKind, rig.Vm.ChipText));
+        Assert.Equal((StatusKind.Connecting, "Not connected"), (rig.Vm.ChipKind, rig.Vm.ChipText));   // grey, as in flyout.html: idle is not an error
         Assert.True(rig.Vm.IsIdle);
         Assert.False(rig.Vm.IsHosting);
         Assert.False(rig.Vm.IsJoined);

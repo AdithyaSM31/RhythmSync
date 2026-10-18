@@ -137,7 +137,7 @@ public sealed class FlyoutSmokeTests
             Assert.Contains("RhythmSync", texts);
             Assert.Contains(TrayFlyoutViewModel.IdleText, texts);
             var chip = Assert.Single(Descendants<StatusChip>(rig.Window), Shown);
-            Assert.Equal((StatusKind.NotConnected, "Not connected"), (chip.Kind, chip.Text));
+            Assert.Equal((StatusKind.Connecting, "Not connected"), (chip.Kind, chip.Text));   // the grey chip
             var open = Assert.Single(ShownButtons(rig.Window));
             Assert.Equal("Open RhythmSync", open.Content);
             Assert.Same(Application.Current.FindResource("PrimaryButton"), open.Style);

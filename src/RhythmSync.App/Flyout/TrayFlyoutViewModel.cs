@@ -75,9 +75,9 @@ public sealed partial class TrayFlyoutViewModel : ObservableObject
     [ObservableProperty]
     private string? _pairingCode;
 
-    /// <summary>The header's status chip.</summary>
+    /// <summary>The header's status chip. Idle shows "Not connected" in the grey Connecting style (flyout.html): idle is not an error.</summary>
     [ObservableProperty]
-    private StatusKind _chipKind = StatusKind.NotConnected;
+    private StatusKind _chipKind = StatusKind.Connecting;
 
     [ObservableProperty]
     private string _chipText = NotConnectedChipText;
@@ -120,7 +120,7 @@ public sealed partial class TrayFlyoutViewModel : ObservableObject
             default:
                 Title = IdleTitle;
                 PairingCode = null;
-                ChipKind = StatusKind.NotConnected;
+                ChipKind = StatusKind.Connecting;   // grey, not Danger: nothing is wrong
                 ChipText = NotConnectedChipText;
                 break;
         }
