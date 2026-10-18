@@ -389,6 +389,50 @@ public class ClientSessionTests
     }
 
     [Fact]
+    public async Task Audio_is_accepted_only_from_the_hosts_address()
+    {
+        const uint sessionId = 0x5E55_0001;
+        await using var rig = await HostRig.StartAsync(sessionId: sessionId);
+        var outputs = new FakeOutputFactory();
+        await using var client = NewClient(outputs);
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
+        var clientAudio = new IPEndPoint(IPAddress.Loopback, rig.Host.Clients[0].AudioEndPoint.Port);
+        var scheduler = SchedulerOf(outputs.Last);
+        var clock = new StopwatchClock();
+        var buffer = new float[480 * AudioFormat.Channels];
+
+        // One second of frames whose middle is due now, as a host 200 ms into its stream would send them.
+        void SendStream(UdpClient from)
+        {
+            long t0 = clock.NowTicks - 2_000_000;
+            var packet = new byte[PacketSerializer.AudioPacketBytes];
+            var pcm = new short[AudioFormat.FrameFloats];
+            for (uint seq = 0; seq < 200; seq++)
+            {
+                PacketSerializer.WriteAudio(packet, sessionId, seq, t0 + seq * AudioFormat.FrameTicks, pcm);
+                from.Send(packet, packet.Length, clientAudio);
+            }
+        }
+
+        bool RenderPlays()
+        {
+            long now = clock.NowTicks;
+            scheduler.Render(buffer, new RenderTiming(0, now, 0));
+            return scheduler.State == PlaybackState.Playing;
+        }
+
+        using (var stranger = new UdpClient(new IPEndPoint(IPAddress.Parse("127.0.0.2"), 0)))
+            SendStream(stranger);   // another PC on the LAN (or a stale host) sending to our port
+        await Task.Delay(300);
+        Assert.False(RenderPlays());
+
+        using var host = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        SendStream(host);
+        await TickUntil(RenderPlays, client, TimeSpan.FromSeconds(2), () => rig);
+    }
+
+    [Fact]
     public async Task Heartbeats_carry_stats_to_the_host()
     {
         await using var rig = await HostRig.StartAsync();

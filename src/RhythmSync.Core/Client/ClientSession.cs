@@ -35,7 +35,8 @@ public sealed record JoinResult(JoinOutcome Outcome, RejectReason? Reason = null
 /// <para>
 /// Every Welcome starts a new session: a fresh clock estimator, clock-sync client, pipeline and output (a scheduler or
 /// jitter buffer from an old session cannot be reused). The audio UDP channel is bound once, on the first join, and
-/// kept for the lifetime of this object; datagrams of other sessions are dropped by the pipeline.
+/// kept for the lifetime of this object; datagrams from any address but the host's (the TCP connection's remote
+/// address) are dropped, and those of other sessions are dropped by the pipeline.
 /// </para>
 /// <para>
 /// Heartbeats always carry stats. Until the pipeline exists, the audio fields (<c>LossPct</c>, <c>LatePct</c>,
@@ -75,11 +76,16 @@ public sealed class ClientSession : IAsyncDisposable
             Tcp = tcp;
             Stream = tcp.GetStream();
             Welcome = welcome;
+            var host = ((IPEndPoint)tcp.Client.RemoteEndPoint!).Address;
+            HostAddress = host.IsIPv4MappedToIPv6 ? host.MapToIPv4() : host;
         }
 
         public TcpClient Tcp { get; }
         public NetworkStream Stream { get; }
         public Welcome Welcome { get; }
+
+        /// <summary>The host's IP address: audio is accepted only from it.</summary>
+        public IPAddress HostAddress { get; }
         public CancellationTokenSource Cts { get; } = new();   // cancelled on close; never disposed (no timers or links)
         public SemaphoreSlim WriteLock { get; } = new(1, 1);
         public Task Reader { get; set; } = Task.CompletedTask;
@@ -118,7 +124,10 @@ public sealed class ClientSession : IAsyncDisposable
 
     private readonly object _gate = new();
     private IDatagramChannel? _audioChannel;
-    private ClientPipeline? _audioTarget;   // where audio datagrams go; read on the audio receive thread
+    /// <summary>Where audio datagrams go and the only address they are accepted from.</summary>
+    private sealed record AudioRoute(ClientPipeline Pipeline, IPAddress Host);
+
+    private AudioRoute? _audioRoute;        // read on the audio receive thread
     private Connection? _conn;
     private IPEndPoint? _endpoint;
     private string? _code;
@@ -396,7 +405,7 @@ public sealed class ClientSession : IAsyncDisposable
         pipeline.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
         c.Pipeline = pipeline;
         c.Window = new StatsWindow();
-        Volatile.Write(ref _audioTarget, pipeline);
+        Volatile.Write(ref _audioRoute, new AudioRoute(pipeline, c.HostAddress));
         StartOutputLocked(c, output, now);
         return true;   // Ready even if the output failed to start: audio is buffered (the state stays Syncing) and the output is retried
     }
@@ -591,7 +600,7 @@ public sealed class ClientSession : IAsyncDisposable
     private void TeardownLocked(Connection c, bool closeTcp)
     {
         StopOutputLocked(c);
-        if (ReferenceEquals(Volatile.Read(ref _audioTarget), c.Pipeline)) Volatile.Write(ref _audioTarget, null);
+        if (ReferenceEquals(Volatile.Read(ref _audioRoute)?.Pipeline, c.Pipeline)) Volatile.Write(ref _audioRoute, null);
         c.Pipeline = null;
         c.ClockClient?.Dispose();
         if (closeTcp) c.Close();
@@ -622,7 +631,11 @@ public sealed class ClientSession : IAsyncDisposable
         _audioChannel = channel;
     }
 
-    private void OnAudioDatagram(ReadOnlySpan<byte> data, IPEndPoint from) => Volatile.Read(ref _audioTarget)?.HandleAudioDatagram(data);
+    private void OnAudioDatagram(ReadOnlySpan<byte> data, IPEndPoint from)
+    {
+        var route = Volatile.Read(ref _audioRoute);
+        if (route is not null && route.Host.Equals(from.Address)) route.Pipeline.HandleAudioDatagram(data);
+    }
 
     /// <summary>One handshake: connect, Hello, first reply. Never throws except for cancellation of <paramref name="ct"/>.</summary>
     private async Task<(JoinResult Result, Connection? Conn)> ConnectAsync(IPEndPoint control, string code, int audioPort, CancellationToken ct)
@@ -641,8 +654,9 @@ public sealed class ClientSession : IAsyncDisposable
             switch (reply)
             {
                 case Welcome w when IsUsable(w):
+                    var conn = new Connection(tcp, w);
                     handedOver = true;
-                    return (new JoinResult(JoinOutcome.Joined), new Connection(tcp, w));
+                    return (new JoinResult(JoinOutcome.Joined), conn);
                 case Reject r:
                     return (new JoinResult(JoinOutcome.Rejected, r.Reason), null);
                 default:
