@@ -1,0 +1,141 @@
+<!--
+    Buttons (spec §2.2): Primary, Secondary (also the implicit Button style), Ghost and Danger.
+    Hover lightens by 6 % and press darkens by 6 % through a tinted overlay that fades over 120 ms;
+    disabled buttons sit at 40 % opacity.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+        <ResourceDictionary Source="FocusVisual.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- Shared hover/press/disabled states. The overlay brush is created per button, so it can be animated. -->
+    <ControlTemplate x:Key="StudioButtonTemplate" TargetType="ButtonBase">
+        <Grid x:Name="Root" SnapsToDevicePixels="True">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CommonStates">
+                    <VisualStateGroup.Transitions>
+                        <VisualTransition GeneratedDuration="0:0:0.12" />
+                    </VisualStateGroup.Transitions>
+                    <VisualState x:Name="Normal" />
+                    <VisualState x:Name="MouseOver">
+                        <Storyboard>
+                            <ColorAnimation Storyboard.TargetName="Overlay" Duration="0" To="#0FFFFFFF"
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Pressed">
+                        <Storyboard>
+                            <ColorAnimation Storyboard.TargetName="Overlay" Duration="0" To="#0F000000"
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Disabled" />
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource RadiusControl}" />
+            <Border x:Name="Overlay" CornerRadius="{StaticResource RadiusControl}" IsHitTestVisible="False">
+                <Border.Background>
+                    <SolidColorBrush Color="#00FFFFFF" />
+                </Border.Background>
+            </Border>
+            <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Root" Property="Opacity" Value="0.4" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- The same template, with the soft accent glow under the fill (kept off the text so it stays crisp). -->
+    <ControlTemplate x:Key="PrimaryButtonTemplate" TargetType="ButtonBase">
+        <Grid x:Name="Root" SnapsToDevicePixels="True">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="CommonStates">
+                    <VisualStateGroup.Transitions>
+                        <VisualTransition GeneratedDuration="0:0:0.12" />
+                    </VisualStateGroup.Transitions>
+                    <VisualState x:Name="Normal" />
+                    <VisualState x:Name="MouseOver">
+                        <Storyboard>
+                            <ColorAnimation Storyboard.TargetName="Overlay" Duration="0" To="#0FFFFFFF"
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Pressed">
+                        <Storyboard>
+                            <ColorAnimation Storyboard.TargetName="Overlay" Duration="0" To="#0F000000"
+                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" />
+                        </Storyboard>
+                    </VisualState>
+                    <VisualState x:Name="Disabled" />
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{StaticResource RadiusControl}">
+                <Border.Effect>
+                    <DropShadowEffect Color="{StaticResource AccentColor}" BlurRadius="18" ShadowDepth="4"
+                                      Direction="270" Opacity="0.35" />
+                </Border.Effect>
+            </Border>
+            <Border x:Name="Overlay" CornerRadius="{StaticResource RadiusControl}" IsHitTestVisible="False">
+                <Border.Background>
+                    <SolidColorBrush Color="#00FFFFFF" />
+                </Border.Background>
+            </Border>
+            <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Root" Property="Opacity" Value="0.4" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- Secondary is the base: Raised fill with a RaisedBorder hairline. -->
+    <Style x:Key="SecondaryButton" TargetType="Button">
+        <Setter Property="Template" Value="{StaticResource StudioButtonTemplate}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StudioFocusVisual}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="16,8" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="Background" Value="{StaticResource RaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource RaisedBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <Setter Property="Template" Value="{StaticResource PrimaryButtonTemplate}" />
+        <Setter Property="Foreground" Value="{StaticResource BgBrush}" />
+        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <Setter Property="Foreground" Value="{StaticResource AccentSoftBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <!-- Danger tint: fill at 12 % alpha, border at 30 %, lighter danger text (as in the mockup). -->
+    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <Setter Property="Foreground" Value="#FF8B97" />
+        <Setter Property="Background" Value="#1FFF6B7A" />
+        <Setter Property="BorderBrush" Value="#4DFF6B7A" />
+    </Style>
+
+    <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}" />
+
+</ResourceDictionary>

@@ -1,0 +1,19 @@
+<!-- Keyboard focus ring shared by every focusable style: a 2 px Accent rounded rectangle, 2 px outside the control. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <Style x:Key="StudioFocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <!-- Margin -4: a 2 px gap, then the 2 px stroke. -->
+                    <Rectangle Margin="-4" RadiusX="11" RadiusY="11" StrokeThickness="2"
+                               Stroke="{StaticResource AccentBrush}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>
