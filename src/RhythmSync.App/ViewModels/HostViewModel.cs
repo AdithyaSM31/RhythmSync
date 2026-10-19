@@ -34,6 +34,7 @@ public sealed partial class HostViewModel : ObservableObject
 
     private string _sessionName;
     private int _latencyMs;
+    private readonly Func<bool>? _isPlayingLocally;
     private HostAudioStatus _status = HostAudioStatus.Ok;
 
     /// <param name="host">What the host session offers.</param>
@@ -46,9 +47,12 @@ public sealed partial class HostViewModel : ObservableObject
     /// <param name="openSoundSettings">Opens the Windows sound settings; defaults to <c>ms-settings:sound</c>.</param>
     /// <param name="setLocalEq">Applies the EQ of this PC's own speakers when the user changes it; null applies nothing.</param>
     /// <param name="localDeviceId">The device id this PC's own settings are stored under; its EQ is saved only when this is not <see cref="Guid.Empty"/>.</param>
+    /// <param name="isPlayingLocally">Whether this PC's speakers are actually playing the stream; read by <see cref="RefreshLocalPlayback"/>.
+    /// Null falls back to "the audio status is Ok".</param>
     public HostViewModel(IHostControl host, Func<HostAudioStatus> audioStatus, Func<Guid, DeviceSettings?> storedSettings,
         Action<Guid, DeviceSettings> saveSettings, string pairingCode = "", string sessionName = "", int latencyMs = 200,
-        Action? openSoundSettings = null, Action<EqGains>? setLocalEq = null, Guid localDeviceId = default)
+        Action? openSoundSettings = null, Action<EqGains>? setLocalEq = null, Guid localDeviceId = default,
+        Func<bool>? isPlayingLocally = null)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _audioStatus = audioStatus ?? throw new ArgumentNullException(nameof(audioStatus));
@@ -56,6 +60,7 @@ public sealed partial class HostViewModel : ObservableObject
         _saveSettings = saveSettings ?? throw new ArgumentNullException(nameof(saveSettings));
         _setLocalEq = setLocalEq;
         _localDeviceId = localDeviceId;
+        _isPlayingLocally = isPlayingLocally;
         PairingCode = pairingCode;
         _sessionName = sessionName;
         _latencyMs = NormalizeLatency(latencyMs);
@@ -68,7 +73,7 @@ public sealed partial class HostViewModel : ObservableObject
         });
 
         LocalSpeaker = new LocalSpeakerRowViewModel(EqGains.FromStored(SafeStored(localDeviceId)?.EqGainsDb));
-        LocalSpeaker.IsPlaying = _status == HostAudioStatus.Ok;
+        RefreshLocalPlayback();
         LocalSpeaker.Eq.Changed += OnLocalEqChangedByUser;
 
         Clients.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoClients));
@@ -128,7 +133,7 @@ public sealed partial class HostViewModel : ObservableObject
         private set
         {
             if (!SetProperty(ref _status, value)) return;
-            LocalSpeaker.IsPlaying = value == HostAudioStatus.Ok;   // local playback runs only while the routing is fine
+            RefreshLocalPlayback();   // local playback runs only while the routing is fine
             OnPropertyChanged(nameof(AudioBanner));
             OnPropertyChanged(nameof(HasAudioBanner));
         }
@@ -147,6 +152,21 @@ public sealed partial class HostViewModel : ObservableObject
 
     /// <summary>Opens the Windows sound settings.</summary>
     public IRelayCommand OpenSoundSettingsCommand { get; }
+
+    /// <summary>
+    /// Re-reads whether this PC's speakers are playing, for the This PC card's status chip. Call it (UI thread) after local
+    /// playback started or stopped; <see cref="RefreshAudioStatus"/> does so when the status changes.
+    /// </summary>
+    public void RefreshLocalPlayback()
+    {
+        bool playing = _status == HostAudioStatus.Ok;
+        if (_isPlayingLocally is not null)
+        {
+            try { playing = _isPlayingLocally(); }
+            catch (Exception e) { Log.Warning(e, "Checking local playback failed"); }
+        }
+        LocalSpeaker.IsPlaying = playing;
+    }
 
     /// <summary>Re-evaluates the audio routing (call when the default playback device changes). A failing check keeps the last result.</summary>
     public void RefreshAudioStatus()

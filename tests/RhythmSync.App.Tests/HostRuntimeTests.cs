@@ -357,6 +357,24 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         Assert.Equal(1, _env.Log.Count("output0.start"));
     }
 
+    [Fact]
+    public async Task The_this_pc_chip_follows_whether_local_playback_runs()
+    {
+        _env.FailOutput = true;
+        await _runtime.StartAsync("Host");
+        Assert.Equal(HostAudioStatus.Ok, _runtime.Current!.AudioStatus);
+        Assert.False(_runtime.Current.LocalSpeaker.IsPlaying);   // the routing is fine, but the output failed and is retrying
+
+        _env.FailOutput = false;
+        _runtime.Tick();
+        Pump();
+        Assert.Single(_env.Outputs);
+        Assert.True(_runtime.Current.LocalSpeaker.IsPlaying);
+
+        _runtime.SetLocalSpeaker(CableDeviceId);   // the captured endpoint: local playback stops
+        Assert.False(_runtime.Current.LocalSpeaker.IsPlaying);
+    }
+
     // ---- local playback ----------------------------------------------------------------------------------------------
 
     [Fact]

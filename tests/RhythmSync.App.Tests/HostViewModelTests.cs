@@ -731,6 +731,49 @@ public class HostViewModelTests
     }
 
     [Fact]
+    public void This_pc_follows_actual_local_playback_when_the_owner_reports_it()
+    {
+        bool playing = false;
+        var vm = new HostViewModel(new FakeHost(), () => HostAudioStatus.Ok, _ => null, (_, _) => { }, isPlayingLocally: () => playing);
+
+        // The routing is fine, but nothing plays (no speaker resolves, or the output failed and is retrying).
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+        Assert.Equal("Not playing on this PC", vm.LocalSpeaker.StatusText);
+
+        playing = true;
+        vm.RefreshLocalPlayback();
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+        Assert.Equal("Playing here", vm.LocalSpeaker.StatusText);
+
+        playing = false;
+        vm.RefreshAudioStatus();   // the status did not change; the chip does not move on its own
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+        vm.RefreshLocalPlayback();
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+    }
+
+    [Fact]
+    public void This_pc_playing_callback_is_read_when_the_status_changes_and_a_failing_one_keeps_the_chip()
+    {
+        bool playing = true;
+        bool fail = false;
+        var status = HostAudioStatus.Ok;
+        var vm = new HostViewModel(new FakeHost(), () => status, _ => null, (_, _) => { },
+            isPlayingLocally: () => fail ? throw new InvalidOperationException("gone") : playing);
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+
+        playing = false;
+        status = HostAudioStatus.VbCableMissing;
+        vm.RefreshAudioStatus();
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+
+        playing = true;
+        fail = true;
+        vm.RefreshLocalPlayback();   // logged; the last value stays
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+    }
+
+    [Fact]
     public void This_pc_copy_is_exact()
     {
         Assert.Equal("This PC", LocalSpeakerRowViewModel.NameText);

@@ -321,7 +321,8 @@ public sealed class HostRuntime : IHostRuntime
             storedSettings: id => _settings.Current.Devices.TryGetValue(id, out var d) ? d : null,
             saveSettings: (id, d) => _settings.Update(s => s with { Devices = new Dictionary<Guid, DeviceSettings>(s.Devices) { [id] = d } }),
             pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings,
-            setLocalEq: SetLocalEq, localDeviceId: _settings.Current.DeviceId);
+            setLocalEq: SetLocalEq, localDeviceId: _settings.Current.DeviceId,
+            isPlayingLocally: () => run.Local is not null);
         vm.LatencyChanged += ms => _settings.Update(s => s with { TargetLatencyMs = ms });
         return vm;
     }
@@ -475,6 +476,7 @@ public sealed class HostRuntime : IHostRuntime
             Volatile.Write(ref run.OutputDirty, 1);
             Volatile.Write(ref run.RetryAfterTicks, _clock.NowTicks + _options.RetryDelayTicks);
         }
+        run.Vm.RefreshLocalPlayback();   // the This PC chip follows whether local playback is running now
     }
 
     private void StartLocal(Run run, string speakerId)
