@@ -168,6 +168,46 @@ public class ThemeTests
     }
 
     [Fact]
+    public void The_eq_section_header_changes_on_hover_and_press()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var template = Assert.IsType<ControlTemplate>(((Style)Find("EqSectionHeaderToggle")).Setters
+                .OfType<Setter>().Single(s => s.Property == Control.TemplateProperty).Value);
+
+            foreach (var property in new[] { UIElement.IsMouseOverProperty, ButtonBase.IsPressedProperty })
+            {
+                var trigger = Assert.Single(template.Triggers.OfType<Trigger>(), t => t.Property == property);
+                Assert.Contains(trigger.Setters.OfType<Setter>(), s => s.TargetName == "Frame" && s.Property == Border.BackgroundProperty);
+                Assert.Contains(trigger.Setters.OfType<Setter>(), s => s.TargetName == "Chevron" && s.Property == TextBlock.ForegroundProperty);
+            }
+        });
+    }
+
+    [Fact]
+    public void The_eq_band_fill_runs_the_same_way_for_a_boost_and_a_cut()
+    {
+        UiDispatcher.Run(() =>
+        {
+            Color StopColour(double value, double offset)
+            {
+                var slider = new Slider { Style = (Style)Find("EqBandSlider"), Value = value };
+                UiDispatcher.Render(slider);
+                var fill = (Border)slider.Template.FindName("Fill", slider);
+                var brush = Assert.IsType<LinearGradientBrush>(fill.Background);
+                return brush.GradientStops.Single(s => s.Offset == offset).Color;
+            }
+
+            // The fill bar's top is the thumb for a boost and the 0 dB line for a cut, so the stops swap to keep
+            // the thumb end violet and the 0 dB end teal in both.
+            Assert.Equal(ColourOf("Accent"), StopColour(6, 0));
+            Assert.Equal(ColourOf("Teal"), StopColour(6, 1));
+            Assert.Equal(ColourOf("Teal"), StopColour(-6, 0));
+            Assert.Equal(ColourOf("Accent"), StopColour(-6, 1));
+        });
+    }
+
+    [Fact]
     public void Styled_controls_render_without_binding_errors()
     {
         UiDispatcher.Run(() =>

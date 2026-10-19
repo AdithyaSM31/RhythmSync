@@ -33,7 +33,7 @@
                 <Border Height="1" VerticalAlignment="Top" Margin="32,112,0,0" Background="{StaticResource CardBorderBrush}" />
                 <TextBlock Text="+12" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,1,0,0" />
                 <TextBlock Text="0" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,53,0,0" />
-                <TextBlock Text="&#x2212;12" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,105,0,0" />
+                <TextBlock Text="-12" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,105,0,0" />
             </Grid>
 
             <ItemsControl ItemsSource="{Binding Bands}" Margin="32,0,0,0" Focusable="False">

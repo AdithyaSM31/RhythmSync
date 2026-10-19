@@ -187,6 +187,7 @@ public class HostPagesSmokeTests
             Assert.Contains(Descendants<TextBlock>(section), t => t.Text == "EQ" && Shown(t));
             Assert.Contains(Descendants<TextBlock>(section), t => t.Text == "Custom" && Shown(t));   // the header: no preset matches
             Assert.Contains(Descendants<TextBlock>(editor), t => t.Text == "Preset" && Shown(t));
+            Assert.Contains(Descendants<TextBlock>(editor), t => t.Text == "-12" && Shown(t));   // ASCII hyphen-minus, like GainText and PreampText
             Assert.Contains(Descendants<TextBlock>(editor), t => t.Text == host.Clients[0].Eq.PreampText && Shown(t));
             var flat = Assert.Single(Descendants<Button>(editor), b => Equals(b.Content, "Flat"));
             Assert.Same(Application.Current.FindResource("GhostButton"), flat.Style);

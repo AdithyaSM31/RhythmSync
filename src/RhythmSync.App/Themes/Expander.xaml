@@ -21,7 +21,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
-                    <Border Background="{TemplateBinding Background}" Padding="0,2">
+                    <Border x:Name="Frame" Background="{TemplateBinding Background}" CornerRadius="{StaticResource RadiusSmall}" Padding="6,3" Margin="-6,-1">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="Chevron" Text="&#xE76C;" FontFamily="{StaticResource FontIcons}" FontSize="12"
                                        Foreground="{StaticResource TextMutedBrush}" Width="14" VerticalAlignment="Center" />
@@ -33,6 +33,15 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Chevron" Property="Text" Value="&#xE70D;" />
+                        </Trigger>
+                        <!-- Hover and press (acceptance D1.8): a Raised plate behind the header and a brighter chevron, deeper while pressed. -->
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Frame" Property="Background" Value="{StaticResource RaisedBrush}" />
+                            <Setter TargetName="Chevron" Property="Foreground" Value="{StaticResource TextBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Frame" Property="Background" Value="{StaticResource RaisedBorderBrush}" />
+                            <Setter TargetName="Chevron" Property="Foreground" Value="{StaticResource TextBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

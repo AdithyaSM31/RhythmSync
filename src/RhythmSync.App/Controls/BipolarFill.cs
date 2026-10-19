@@ -29,6 +29,20 @@ public static class BipolarFill
 }
 
 /// <summary>
+/// For the EQ band slider's template: (Value, Minimum, Maximum) become true when the value is below the middle of the
+/// range, a cut, so that the fill bar (then below the middle) can run its gradient the other way and look like a boost.
+/// </summary>
+public sealed class BipolarCutConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+        => values.Length >= 3 && values[0] is double value && values[1] is double min && values[2] is double max
+           && value < (min + max) / 2;
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// For the EQ band slider's template: (Value, Minimum, Maximum, ActualHeight) become the margin of a stretched
 /// fill bar. The ConverterParameter is the thumb size: the thumb's centre travels over the track minus one thumb,
 /// starting half a thumb down, and the fill must follow the centre.

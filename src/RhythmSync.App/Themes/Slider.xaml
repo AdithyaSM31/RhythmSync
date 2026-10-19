@@ -123,6 +123,7 @@
     </Style>
 
     <c:BipolarFillConverter x:Key="BipolarFillConverter" />
+    <c:BipolarCutConverter x:Key="BipolarCutConverter" />
 
     <!--
         EqBandSlider: a vertical -12..+12 dB slider for one EQ band. A 4 px track, an accent fill from the 0 dB midpoint to
@@ -149,7 +150,7 @@
                 <ControlTemplate TargetType="Slider">
                     <Grid x:Name="Root" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
                         <Border Width="4" CornerRadius="2" HorizontalAlignment="Center" Margin="0,8" Background="{StaticResource TrackBrush}" />
-                        <Border Width="4" CornerRadius="2" HorizontalAlignment="Center" VerticalAlignment="Stretch">
+                        <Border x:Name="Fill" Width="4" CornerRadius="2" HorizontalAlignment="Center" VerticalAlignment="Stretch">
                             <Border.Margin>
                                 <MultiBinding Converter="{StaticResource BipolarFillConverter}" ConverterParameter="16">
                                     <Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}" />
@@ -158,12 +159,39 @@
                                     <Binding Path="ActualHeight" RelativeSource="{RelativeSource TemplatedParent}" />
                                 </MultiBinding>
                             </Border.Margin>
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                    <GradientStop Color="{StaticResource AccentColor}" Offset="0" />
-                                    <GradientStop Color="{StaticResource TealColor}" Offset="1" />
-                                </LinearGradientBrush>
-                            </Border.Background>
+                            <!-- The 0 dB end is teal and the thumb end is violet for a boost and a cut alike (spec §7.2):
+                                 the bar for a cut is below the middle, so its gradient runs the other way. -->
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background">
+                                        <Setter.Value>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{StaticResource AccentColor}" Offset="0" />
+                                                <GradientStop Color="{StaticResource TealColor}" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Value="True">
+                                            <DataTrigger.Binding>
+                                                <MultiBinding Converter="{StaticResource BipolarCutConverter}">
+                                                    <Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                    <Binding Path="Minimum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                    <Binding Path="Maximum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                </MultiBinding>
+                                            </DataTrigger.Binding>
+                                            <Setter Property="Background">
+                                                <Setter.Value>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                        <GradientStop Color="{StaticResource TealColor}" Offset="0" />
+                                                        <GradientStop Color="{StaticResource AccentColor}" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                         </Border>
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
