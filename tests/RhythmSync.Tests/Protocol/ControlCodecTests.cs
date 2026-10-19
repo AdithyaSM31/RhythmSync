@@ -39,6 +39,46 @@ public class ControlCodecTests
     }
 
     [Fact]
+    public async Task SetDeviceSettings_round_trips_its_eq()
+    {
+        float[] gains = [3f, -2.5f, 0, 0, 1f, 0, 0, 0, 12f, -12f];
+        var ms = new MemoryStream();
+        await ControlCodec.WriteAsync(ms, new SetDeviceSettings(0.5f, -12.5, gains), CancellationToken.None);
+        ms.Position = 0;
+
+        var read = Assert.IsType<SetDeviceSettings>(await ControlCodec.ReadAsync(ms, CancellationToken.None));
+
+        Assert.Equal(0.5f, read.Volume);
+        Assert.Equal(-12.5, read.OffsetMs);
+        Assert.Equal(gains, read.EqGainsDb);
+    }
+
+    [Fact]
+    public async Task SetDeviceSettings_without_eq_reads_as_null()
+    {
+        var body = Encoding.UTF8.GetBytes("{\"type\":\"SetDeviceSettings\",\"Volume\":0.5,\"OffsetMs\":0}");
+
+        var read = Assert.IsType<SetDeviceSettings>(
+            await ControlCodec.ReadAsync(new MemoryStream(Frame(body.Length, body)), CancellationToken.None));
+
+        Assert.Null(read.EqGainsDb);
+    }
+
+    [Fact]
+    public async Task SetDeviceSettings_with_a_wrong_length_eq_still_parses()
+    {
+        // Validation is the client's job; a bad array must not drop the connection.
+        var body = Encoding.UTF8.GetBytes("{\"type\":\"SetDeviceSettings\",\"Volume\":0.5,\"OffsetMs\":0,\"EqGainsDb\":[1,2,3,\"NaN\"]}");
+
+        var read = Assert.IsType<SetDeviceSettings>(
+            await ControlCodec.ReadAsync(new MemoryStream(Frame(body.Length, body)), CancellationToken.None));
+
+        Assert.NotNull(read.EqGainsDb);
+        Assert.Equal(4, read.EqGainsDb!.Length);
+        Assert.True(float.IsNaN(read.EqGainsDb[3]));
+    }
+
+    [Fact]
     public async Task Json_uses_type_discriminator_and_string_enums()
     {
         var ms = new MemoryStream();

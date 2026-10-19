@@ -225,7 +225,7 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         var beacon = await NextBeaconAsync();
         var client = await TestClient.ConnectAsync(beacon.ControlPort);
         _disposables.Add(client);
-        await client.SendAsync(new Hello(id, name, _runtime.Current!.PairingCode, 1, audioPort));
+        await client.SendAsync(new Hello(id, name, _runtime.Current!.PairingCode, RhythmSync.Core.Host.HostSession.ProtocolVersion, audioPort));
         return (client, Assert.IsType<Welcome>(await client.ReadAsync()));
     }
 
@@ -676,7 +676,7 @@ public sealed class HostRuntimeTests : IAsyncDisposable
 
         Assert.Equal("Living room", beacon.Name);
         Assert.NotEqual(0, beacon.ControlPort);
-        Assert.Equal(1, beacon.ProtocolVersion);
+        Assert.Equal(2, beacon.ProtocolVersion);
     }
 
     [Fact]

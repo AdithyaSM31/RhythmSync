@@ -1,7 +1,10 @@
 namespace RhythmSync.Core.Config;
 
-/// <summary>Per-device playback settings the host keeps for a client (volume 0..1, offset ±100 ms).</summary>
-public sealed record DeviceSettings(float Volume, double OffsetMs);
+/// <summary>
+/// Per-device playback settings the host keeps for a client (volume 0..1, offset ±100 ms, optional 10-band EQ gains in dB).
+/// A null <paramref name="EqGainsDb"/> means flat; files written before the EQ existed load that way.
+/// </summary>
+public sealed record DeviceSettings(float Volume, double OffsetMs, float[]? EqGainsDb = null);
 
 /// <summary>Persisted application settings (see <see cref="SettingsStore"/>).</summary>
 /// <param name="DeviceId">This PC's stable identity in sessions.</param>

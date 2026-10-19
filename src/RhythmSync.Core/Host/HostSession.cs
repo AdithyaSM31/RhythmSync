@@ -37,7 +37,7 @@ public interface IHostControl
 /// </remarks>
 public sealed class HostSession : IHostControl, IAsyncDisposable
 {
-    public const int ProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
 
     public const int MinLatencyMs = 100;
     public const int MaxLatencyMs = 500;

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RhythmSync.Core.Audio.Eq;
 
 namespace RhythmSync.Core.Config;
 
@@ -79,7 +80,9 @@ public sealed class SettingsStore
             foreach (var (id, d) in stored)
             {
                 if (d is null || !float.IsFinite(d.Volume) || !double.IsFinite(d.OffsetMs)) continue;
-                devices[id] = new DeviceSettings(Math.Clamp(d.Volume, 0f, 1f), Math.Clamp(d.OffsetMs, -MaxOffsetMs, MaxOffsetMs));
+                // A bad EQ (wrong length, non-finite) costs only that device its EQ; flat is stored as null.
+                float[]? eq = EqGains.TryCreate(d.EqGainsDb, out var gains) && !gains.IsFlat ? gains.ToArray() : null;
+                devices[id] = new DeviceSettings(Math.Clamp(d.Volume, 0f, 1f), Math.Clamp(d.OffsetMs, -MaxOffsetMs, MaxOffsetMs), eq);
             }
         }
 

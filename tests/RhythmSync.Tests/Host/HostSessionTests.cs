@@ -113,7 +113,7 @@ public class HostSessionTests
         }
 
         /// <summary>Connects and sends a Hello; returns the client and the host's first reply.</summary>
-        public async Task<(TestClient Client, ControlMessage? Reply)> JoinAsync(Guid id, string code = "1234", int version = 1,
+        public async Task<(TestClient Client, ControlMessage? Reply)> JoinAsync(Guid id, string code = "1234", int version = HostSession.ProtocolVersion,
                                                                                  int audioPort = 5000, string name = "Laptop")
         {
             var c = await ConnectAsync();
@@ -236,7 +236,7 @@ public class HostSessionTests
         for (int i = 0; i < 4; i++)
         {
             var bad = await rig.ConnectAsync();
-            await bad.SendAsync(new Hello(Guid.NewGuid(), "", "1234", 1, 5000));   // invalid: counts as a bad code
+            await bad.SendAsync(new Hello(Guid.NewGuid(), "", "1234", HostSession.ProtocolVersion, 5000));   // invalid: counts as a bad code
             Assert.Null(await ReadUntilClosed(bad));
         }
         for (int i = 0; i < 6; i++)
@@ -279,11 +279,11 @@ public class HostSessionTests
     }
 
     [Fact]
-    public async Task Version_mismatch_rejected()
+    public async Task A_protocol_1_hello_is_rejected_with_VersionMismatch()
     {
         await using var rig = await new Rig().StartAsync();
 
-        var (_, reply) = await rig.JoinAsync(Guid.NewGuid(), version: 2);
+        var (_, reply) = await rig.JoinAsync(Guid.NewGuid(), version: 1);
 
         Assert.Equal(new Reject(RejectReason.VersionMismatch), reply);
         Assert.Empty(rig.Host.Clients);
@@ -495,12 +495,12 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         Hello hello = kind switch
         {
-            "noid" => new Hello(Guid.Empty, "Laptop", "1234", 1, 5000),
-            "nocode" => new Hello(id, "Laptop", null!, 1, 5000),
-            "noname" => new Hello(id, null!, "1234", 1, 5000),
-            "blankname" => new Hello(id, "   ", "1234", 1, 5000),
-            "noport" => new Hello(id, "Laptop", "1234", 1, 0),
-            _ => new Hello(id, "Laptop", "1234", 1, 70000),
+            "noid" => new Hello(Guid.Empty, "Laptop", "1234", HostSession.ProtocolVersion, 5000),
+            "nocode" => new Hello(id, "Laptop", null!, HostSession.ProtocolVersion, 5000),
+            "noname" => new Hello(id, null!, "1234", HostSession.ProtocolVersion, 5000),
+            "blankname" => new Hello(id, "   ", "1234", HostSession.ProtocolVersion, 5000),
+            "noport" => new Hello(id, "Laptop", "1234", HostSession.ProtocolVersion, 0),
+            _ => new Hello(id, "Laptop", "1234", HostSession.ProtocolVersion, 70000),
         };
         var bad = await rig.ConnectAsync();
 
@@ -539,7 +539,7 @@ public class HostSessionTests
         for (int i = 0; i < 3; i++)
         {
             var bad = await rig.ConnectAsync();
-            await bad.SendAsync(new Hello(id, "", "1234", 1, 5000));
+            await bad.SendAsync(new Hello(id, "", "1234", HostSession.ProtocolVersion, 5000));
             Assert.Null(await ReadUntilClosed(bad));
         }
 
