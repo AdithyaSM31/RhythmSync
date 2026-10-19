@@ -76,12 +76,27 @@ public class UiHarnessTests
     }
 
     [Fact]
-    public void An_exception_from_a_posted_callback_surfaces_in_the_next_run()
+    public void An_exception_from_a_callback_the_body_posted_surfaces_in_the_same_run()
     {
-        UiDispatcher.Run(() => Dispatcher.CurrentDispatcher.BeginInvoke(() => throw new InvalidOperationException("late")));
+        // Run drains what the body queued before returning, so this is reported here, never by chance in the next Run.
+        var thrown = Assert.Throws<InvalidOperationException>(() =>
+            UiDispatcher.Run(() => Dispatcher.CurrentDispatcher.BeginInvoke(() => throw new InvalidOperationException("late"))));
+        Assert.Equal("late", thrown.Message);
+
+        UiDispatcher.Run(() => { });   // reported once, then cleared
+    }
+
+    [Fact]
+    public void An_exception_from_a_callback_posted_between_runs_surfaces_in_the_next_run()
+    {
+        Dispatcher? dispatcher = null;
+        UiDispatcher.Run(() => dispatcher = Dispatcher.CurrentDispatcher);
+
+        // Posted from the test thread, as an app event marshalled to the UI would be; the next Run's body queues behind it.
+        dispatcher!.BeginInvoke(() => throw new InvalidOperationException("between"));
 
         var thrown = Assert.Throws<InvalidOperationException>(() => UiDispatcher.Run(() => { }));
-        Assert.Equal("late", thrown.Message);
+        Assert.Equal("between", thrown.Message);
 
         UiDispatcher.Run(() => { });   // reported once, then cleared
     }

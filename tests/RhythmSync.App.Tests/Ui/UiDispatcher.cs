@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -31,11 +32,14 @@ internal static class UiDispatcher
     /// <summary>
     /// Runs <paramref name="body"/> on the UI thread and rethrows anything it throws, with its original stack.
     /// Throws <see cref="TimeoutException"/> if it has not finished within <paramref name="timeout"/> (default 30 s),
-    /// and rethrows an exception that an earlier posted callback left unhandled on the UI thread.
+    /// and rethrows an exception that a posted callback left unhandled on the UI thread.
+    /// Before returning it lets the dispatcher run until idle, so a callback the body posted (BeginInvoke, a binding
+    /// update) has run by then and its exception surfaces in this Run, never by chance in the next one.
     /// </summary>
     public static void Run(Action body, TimeSpan? timeout = null)
     {
         var limit = timeout ?? DefaultTimeout;
+        var clock = Stopwatch.StartNew();
         var dispatcher = Shared.Value;
         RethrowUnhandled();
 
@@ -54,6 +58,11 @@ internal static class UiDispatcher
         if (!operation.Task.Wait(limit))
             throw new TimeoutException($"The UI test body did not finish within {limit.TotalSeconds:0.###} s.");
 
+        // Queued behind everything the body posted at a higher priority, so once it runs those callbacks have too.
+        var idle = dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        if (!idle.Task.Wait(Remaining(limit, clock)))
+            throw new TimeoutException($"The UI thread did not go idle within {limit.TotalSeconds:0.###} s of the test body starting.");
+
         failure?.Throw();
         RethrowUnhandled();
     }
@@ -68,6 +77,9 @@ internal static class UiDispatcher
         element.UpdateLayout();
         element.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
     }
+
+    private static TimeSpan Remaining(TimeSpan limit, Stopwatch clock) =>
+        limit > clock.Elapsed ? limit - clock.Elapsed : TimeSpan.Zero;
 
     /// <summary>Reports (once) the first exception a posted callback threw on the UI thread since the last check.</summary>
     private static void RethrowUnhandled()
