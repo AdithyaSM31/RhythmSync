@@ -14,17 +14,20 @@ public readonly record struct PlaybackStats(double SyncErrorMs, double RatioPpm,
 /// ±<see cref="MaxCorrectionPpm"/>) so that the error stays near zero. Errors beyond <see cref="HardResyncMs"/>
 /// cause one hard resync: the current audio fades out, then playback restarts, faded in, at the right position
 /// (immediately when behind; once the content is due when ahead). A user's offset change that moves the effective
-/// offset by more than <see cref="OffsetResyncMs"/> also resyncs once, so it is heard at once instead of being slewed
-/// out over many seconds. Frames go through a <see cref="Concealer"/> strictly in sequence order. <see cref="Render"/>
-/// runs on the audio thread and does not allocate; <see cref="SetOffset"/>, <see cref="ApplyLatency"/> and
+/// offset by more than <see cref="OffsetResyncMs"/> (a quarter of a millisecond) also resyncs once, so it is heard at
+/// once instead of being slewed out over many seconds; smaller ones are slewed. Frames go through a
+/// <see cref="Concealer"/> strictly in sequence order. <see cref="Render"/> runs on the audio thread and does not allocate; <see cref="SetOffset"/>, <see cref="ApplyLatency"/> and
 /// <see cref="GetStats"/> may be called from other threads.
 /// </summary>
 public sealed class PlaybackScheduler : IRenderCallback
 {
     public const double HardResyncMs = 20, MaxCorrectionPpm = 500;
 
-    /// <summary>An offset change that moves the effective offset by more than this resyncs once instead of slewing.</summary>
-    public const double OffsetResyncMs = 2;
+    /// <summary>
+    /// A user's offset change that moves the effective offset by more than this resyncs once instead of slewing, so even
+    /// a 1 ms step while tuning by ear is heard at once. Automatic drift correction and latency re-clamps never use it.
+    /// </summary>
+    public const double OffsetResyncMs = 0.25;
 
     /// <summary>Proportional gain: rate correction per stream sample of error.</summary>
     public const double Kp = 1e-5;

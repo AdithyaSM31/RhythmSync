@@ -178,16 +178,43 @@ public class PlaybackSchedulerTests
         AssertTracks(rig, 10.5, h => Rig.Truth(h, offsetTicks: h >= change ? (long)(offsetMs * 10_000) : 0));
     }
 
-    [Fact]
-    public void An_offset_change_of_1ms_slews_without_a_resync()
+    [Theory]
+    [InlineData(1)]     // plays later by 1 ms
+    [InlineData(-1)]    // plays earlier by 1 ms
+    public void A_user_offset_change_of_1ms_is_applied_at_once_with_one_resync(double offsetMs)
     {
         var rig = new Rig(deviceDriftPpm: 100);
-        rig.Sim.Schedule(Rig.T0 + 10 * Second, () => rig.Scheduler.SetOffset(1, 200));
+        long change = Rig.T0 + 10 * Second;
+        rig.Sim.Schedule(change, () => rig.Scheduler.SetOffset(offsetMs, 200));
+
+        rig.Run(15);
+
+        Assert.Equal(1, rig.Scheduler.GetStats().Resyncs);
+        AssertTracks(rig, 10.5, h => Rig.Truth(h, offsetTicks: h >= change ? (long)(offsetMs * 10_000) : 0));
+    }
+
+    [Fact]
+    public void A_user_offset_change_of_0_2ms_slews_without_a_resync()
+    {
+        var rig = new Rig(deviceDriftPpm: 100);
+        rig.Sim.Schedule(Rig.T0 + 10 * Second, () => rig.Scheduler.SetOffset(0.2, 200));
 
         rig.Run(20);
 
         Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
-        AssertTracks(rig, 15, h => Rig.Truth(h, offsetTicks: 10_000));
+        AssertTracks(rig, 15, h => Rig.Truth(h, offsetTicks: 2_000));
+    }
+
+    [Fact]
+    public void Setting_the_same_offset_again_does_nothing()
+    {
+        var rig = new Rig(deviceDriftPpm: 100);
+        rig.Scheduler.SetOffset(5, 200);
+        rig.Sim.Schedule(Rig.T0 + 10 * Second, () => rig.Scheduler.SetOffset(5, 200));
+
+        rig.Run(15);
+
+        Assert.Equal(0, rig.Scheduler.GetStats().Resyncs);
     }
 
     [Fact]
