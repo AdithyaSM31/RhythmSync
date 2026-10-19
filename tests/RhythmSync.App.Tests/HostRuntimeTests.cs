@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using RhythmSync.App.Services;
 using RhythmSync.Core;
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
 using RhythmSync.Core.Net;
@@ -815,6 +816,91 @@ public sealed class HostRuntimeTests : IAsyncDisposable
         Assert.Equal(0.6f, settings.Volume);
         Assert.Equal(-7, settings.OffsetMs);
         Assert.Equal(new float[10], settings.EqGainsDb);   // flat until the host UI sends an EQ
+    }
+
+    // ---- this PC's own EQ --------------------------------------------------------------------------------------------
+
+    private static readonly EqGains LaptopEq = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+
+    [Fact]
+    public async Task SetLocalEq_applies_to_the_running_local_pipeline()
+    {
+        await _runtime.StartAsync("Host");
+        Assert.Equal(EqGains.Flat, _runtime.LocalPipelineEq);
+
+        _runtime.SetLocalEq(LaptopEq);
+
+        Assert.Equal(LaptopEq, _runtime.LocalPipelineEq);
+    }
+
+    [Fact]
+    public async Task SetLocalEq_while_not_playing_locally_is_kept_and_applied_when_local_playback_starts()
+    {
+        _env.DefaultId = SpeakersId;   // the cable is not the default: nothing plays locally
+        await _runtime.StartAsync("Host");
+        Assert.Equal(HostAudioStatus.VbCableNotDefault, _runtime.Current!.AudioStatus);
+        Assert.Null(_runtime.LocalPipelineEq);
+
+        _runtime.SetLocalEq(LaptopEq);
+        Assert.Null(_runtime.LocalPipelineEq);
+
+        _env.DefaultId = CableDeviceId;
+        _env.DefaultChanged!();
+        _runtime.Tick();
+        Pump();
+
+        Assert.Single(_env.Outputs);
+        Assert.Equal(LaptopEq, _runtime.LocalPipelineEq);
+    }
+
+    [Fact]
+    public async Task StartLocal_applies_the_stored_local_eq_before_any_view_model_change()
+    {
+        _settings.Update(s => s with
+        {
+            Devices = new Dictionary<Guid, DeviceSettings> { [s.DeviceId] = new DeviceSettings(1f, 0, LaptopEq.ToArray()) },
+        });
+
+        await _runtime.StartAsync("Host");
+
+        Assert.Equal(LaptopEq, _runtime.LocalPipelineEq);
+    }
+
+    [Fact]
+    public async Task A_speaker_change_keeps_the_local_eq()
+    {
+        await _runtime.StartAsync("Host");
+        _runtime.SetLocalEq(LaptopEq);
+
+        _runtime.SetLocalSpeaker(HeadphonesId);
+
+        Assert.Equal(2, _env.Outputs.Count);
+        Assert.Equal(LaptopEq, _runtime.LocalPipelineEq);
+    }
+
+    [Fact]
+    public async Task The_local_eq_survives_a_host_restart()
+    {
+        await _runtime.StartAsync("Host");
+        _runtime.SetLocalEq(LaptopEq);   // not saved: only the runtime's own field can carry it into the restarted run
+
+        _env.Captures[0].Raise();
+        _runtime.Tick();
+        Pump();
+        await WaitUntil(() => _env.Captures.Count == 2 && _runtime.LocalPipelineEq is not null);
+
+        Assert.Equal(2, _env.Outputs.Count);
+        Assert.Equal(LaptopEq, _runtime.LocalPipelineEq);
+    }
+
+    [Fact]
+    public async Task SetLocalEq_does_not_save_the_settings()
+    {
+        await _runtime.StartAsync("Host");
+
+        _runtime.SetLocalEq(LaptopEq);
+
+        Assert.False(_settings.Current.Devices.ContainsKey(_settings.Current.DeviceId));
     }
 
     // ---- stopping ----------------------------------------------------------------------------------------------------
