@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using RhythmSync.Core;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
@@ -192,6 +193,115 @@ public class VirtualSessionTests
 
         Assert.All(statesAt312, kv => Assert.True(kv.Value == SyncState.InSync, $"{kv.Key} is {kv.Value} at 312 s\n{report}"));
         Assert.True(failures.Count == 0, string.Join("\n", failures) + "\n" + report);
+    }
+
+    [Fact]
+    public void An_eq_on_one_remote_changes_only_its_level_and_not_its_timing()
+    {
+        const int Rate = 48000;
+        long runEnd = 60 * Second;
+        var gains = EqGains.Flat.WithBand(4, 12);
+
+        var sim = new SimScheduler();
+        var net = new SimNetwork(sim, seed: 10, new SimLinkProfile());
+
+        var hostClock = new DriftingClock(sim, 0, 0);
+        using var host = new HostPipeline(SessionId, net.Create(HostAudio), net.Create(HostClock), hostClock, Rate, TargetLatencyMs);
+
+        var outputs = new List<Output>();
+        var local = new ClientPipeline(SessionId, new IdentityClockMapping(), Rate);
+        host.Streamer.LocalSink = local;
+        outputs.Add(new Output("host", hostClock, local, new FakeOutput(sim, hostClock, Rate, 0, 480), null));
+
+        // Same remotes as the 10-minute test; only A gets an EQ.
+        RemoteSpec[] remotes =
+        [
+            new("A", 4 * Second, +100, 48000, +50, 512),
+            new("B", -9 * Second, -80, 44100, -100, 882),
+            new("C", 30 * 60 * Second, +40, 48000, 0, 480),
+        ];
+        for (int i = 0; i < remotes.Length; i++)
+        {
+            var r = remotes[i];
+            var address = IPAddress.Parse($"10.0.0.{i + 2}");
+            var clientClock = new DriftingClock(sim, r.ClockOffsetTicks, r.ClockDriftPpm);
+            var estimator = new ClockEstimator();
+            var pipeline = new ClientPipeline(SessionId, estimator, r.DeviceRate);
+            if (r.Name == "A") pipeline.Eq.SetGains(gains);
+
+            var audioEndPoint = new IPEndPoint(address, 47802);
+            net.Create(audioEndPoint).Start((data, _) => pipeline.HandleAudioDatagram(data));
+            host.Streamer.AddClient(Guid.NewGuid(), audioEndPoint);
+
+            var sync = new ClockSyncClient(net.Create(new IPEndPoint(address, 47803)), clientClock, HostClock, SessionId, estimator);
+            sync.Start();
+            Repeat(sim, 10 * Ms, sync.Tick);
+
+            outputs.Add(new Output(r.Name, clientClock, pipeline, new FakeOutput(sim, clientClock, r.DeviceRate, r.DeviceDriftPpm, r.PeriodFrames), estimator));
+        }
+
+        foreach (var o in outputs)
+        {
+            o.Device.RecordSamples = o.Name != "B";   // the level checks use host, A and C
+            o.Device.StreamPositionProbe = () => o.Pipeline.Scheduler.LastRenderStreamPosition;
+            o.Device.Start(o.Pipeline.Scheduler);
+        }
+
+        var captureClock = new DriftingClock(sim, 0, +30);
+        new FakeCapture(sim, captureClock, hostClock, Rate, host.OnCaptured).Start();
+
+        sim.RunUntil(runEnd);
+
+        // Level: RMS of the 440 Hz tone over the last 10 s of each 48 kHz device's interleaved output. 1200 frames
+        // are exactly 11 periods of 440 Hz at 48 kHz, so 10 s (400 x 1200 frames) is a whole number of periods.
+        double LevelDb(string name)
+        {
+            var samples = outputs.Single(x => x.Name == name).Device.Samples;
+            const int Frames = 400 * 1200;
+            int first = samples.Count - Frames * AudioFormat.Channels;
+            double worst = double.NegativeInfinity, best = double.PositiveInfinity;
+            for (int ch = 0; ch < AudioFormat.Channels; ch++)
+            {
+                double sum = 0;
+                for (int n = 0; n < Frames; n++)
+                {
+                    double v = samples[first + n * AudioFormat.Channels + ch];
+                    sum += v * v;
+                }
+                double db = 10 * Math.Log10(sum / Frames);
+                worst = Math.Max(worst, db);
+                best = Math.Min(best, db);
+            }
+            Assert.True(worst - best < 0.05, $"{name}: channels differ by {worst - best:F3} dB");
+            return best;
+        }
+
+        double hostDb = LevelDb("host"), aDb = LevelDb("A"), cDb = LevelDb("C");
+        double expectedA = EqCurve.ResponseDb(gains, 48000, 440) + EqCurve.PreampDb(gains, 48000);
+
+        // Alignment, on the same stream-position measure as the 10-minute test.
+        var series = outputs.Select(o => Resample(o.Device.Heard)).ToArray();
+        var report = new StringBuilder();
+        report.AppendLine($"level: host {hostDb:F3} dB, A {aDb:F3} dB (A-host {aDb - hostDb:F3}, expected {expectedA:F3}), C {cDb:F3} dB (C-host {cDb - hostDb:F3})");
+        var failures = new List<string>();
+        for (int i = 0; i < outputs.Count; i++)
+            for (int j = i + 1; j < outputs.Count; j++)
+            {
+                var errors = Errors(series[i], series[j]);
+                if (errors.Length == 0)
+                {
+                    failures.Add($"{outputs[i].Name}–{outputs[j].Name}: no comparable points");
+                    continue;
+                }
+                double p99 = Percentile(errors, 0.99);
+                report.AppendLine($"{outputs[i].Name}–{outputs[j].Name}: n {errors.Length}, p99 {p99 / 48:F3} ms ({p99:F1} samples)");
+                if (p99 > MaxErrorSamples) failures.Add($"{outputs[i].Name}–{outputs[j].Name}: p99 {p99:F1} samples > {MaxErrorSamples}");
+            }
+        _log.WriteLine(report.ToString());
+
+        Assert.True(Math.Abs(aDb - hostDb - expectedA) <= 0.5, $"A − host should be {expectedA:F3} dB{Environment.NewLine}{report}");
+        Assert.True(Math.Abs(cDb - hostDb) <= 0.1, $"C − host should be 0 dB{Environment.NewLine}{report}");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures) + Environment.NewLine + report);
     }
 
     /// <summary>Runs <paramref name="action"/> now and then every <paramref name="interval"/> of true time.</summary>

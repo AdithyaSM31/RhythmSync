@@ -1,4 +1,5 @@
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
@@ -7,9 +8,9 @@ namespace RhythmSync.Core.Client;
 
 /// <summary>
 /// Client media path for one host session: audio datagrams (or frames handed over directly, for the host's own
-/// speaker) → <see cref="JitterBuffer"/> → <see cref="PlaybackScheduler"/> → <see cref="DspChain"/> holding a
-/// <see cref="GainProcessor"/>. The session id is fixed: a new host session needs a new pipeline (the scheduler and
-/// buffer cannot be reset). <see cref="HandleAudioDatagram"/> is called from one network thread and does not allocate.
+/// speaker) → <see cref="JitterBuffer"/> → <see cref="PlaybackScheduler"/> → <see cref="DspChain"/> holding an
+/// <see cref="EqProcessor"/> followed by a <see cref="GainProcessor"/>. The session id is fixed: a new host session
+/// needs a new pipeline (the scheduler and buffer cannot be reset). <see cref="HandleAudioDatagram"/> is called from one network thread and does not allocate.
 /// </summary>
 public sealed class ClientPipeline : IFrameSink
 {
@@ -26,14 +27,17 @@ public sealed class ClientPipeline : IFrameSink
         _sessionId = sessionId;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         Buffer = new JitterBuffer();
+        Eq = new EqProcessor(deviceSampleRate);
         Gain = new GainProcessor();
         Dsp = new DspChain();
+        Dsp.Add(Eq);
         Dsp.Add(Gain);
         _scheduler = new PlaybackScheduler(Buffer, clock, deviceSampleRate, Dsp);
     }
 
     public JitterBuffer Buffer { get; }
     public DspChain Dsp { get; }
+    public EqProcessor Eq { get; }
     public GainProcessor Gain { get; }
 
     /// <summary>The render callback for the current output device; replaced by <see cref="ReplaceOutputRate"/>.</summary>
@@ -59,11 +63,13 @@ public sealed class ClientPipeline : IFrameSink
     public void OnFrame(uint seq, long playAt, ReadOnlySpan<short> pcm) => Buffer.Insert(seq, playAt, pcm);
 
     /// <summary>
-    /// Creates a scheduler for a new output device rate on the same buffer, DSP chain and gain, keeping the current
-    /// offset. Call while no output is rendering with the old scheduler, then start the new output with <see cref="Scheduler"/>.
+    /// Creates a scheduler for a new output device rate on the same buffer, DSP chain, EQ (retuned to the
+    /// new rate, gains kept) and gain, keeping the current offset. Call while no output is rendering with the old
+    /// scheduler, then start the new output with <see cref="Scheduler"/>.
     /// </summary>
     public void ReplaceOutputRate(int deviceSampleRate)
     {
+        Eq.SetSampleRate(deviceSampleRate);
         var next = new PlaybackScheduler(Buffer, _clock, deviceSampleRate, Dsp);
         next.ApplyLatency(_scheduler.EffectiveOffsetMs, MaxTargetLatencyMs);
         _scheduler = next;
