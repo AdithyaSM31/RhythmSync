@@ -10,7 +10,7 @@
 
 RhythmSync plays one Windows PC's audio on several PCs on the same Wi-Fi, in sync. The host captures its system audio (any app) with WASAPI loopback and streams it over UDP with timestamps. Each client syncs its clock to the host and plays every frame at the same moment, so PCs in one room act as a multi-speaker system. The goal is under 2 ms between PCs.
 
-This is the core sync engine (sub-project 1). EQ, microphone calibration and room layout are not built yet.
+This is the core sync engine (sub-project 1) with a per-device EQ (sub-project 2). Microphone calibration and room layout are not built yet.
 
 ## Requirements
 
@@ -85,6 +85,17 @@ The app does not yet measure how long each PC's output path takes (sound card, D
 
 An offset change of more than 2 ms takes effect at once, with one short resync (a brief fade out and in) on that client. Smaller nudges are slewed in without a fade, at up to 0.5 ms per second. Latency changes work the same way in reverse: a step of more than 20 ms resyncs once, a smaller one (a single 10 ms key press on the latency slider) settles gradually over about 20 seconds.
 
+## Matching speakers with EQ
+
+Laptop speakers, a soundbar and a pair of desk speakers rarely sound alike. Each PC has its own ten-band EQ so you can make them match. It is on the **Host** page: every connected PC's card has an **EQ** line, and there is a **This PC** card at the top of the list for the host's own speakers. Click the **EQ** line to open it (it starts collapsed). The EQ is set on the host only; a client's Join page shows it read-only ("EQ: Laptop speakers", "EQ: Flat" or "EQ: Custom").
+
+- **Bands.** Ten sliders from 31 Hz to 16 kHz, each from -12 to +12 dB in 0.5 dB steps. Drag, or use the arrow keys (0.5 dB) and PageUp or PageDown (3 dB). The audio follows as you move; there are no clicks.
+- **Presets.** Flat, Laptop speakers, Bass boost and Treble cut. Moving a slider off a preset shows Custom. **Flat** puts every band back to 0 dB.
+- **Preamp.** When you boost a band, RhythmSync lowers that PC's overall level a little so the boost cannot clip. The readout next to **Flat** shows how much (for example "Preamp -3.9 dB"). A boosted PC is therefore a bit quieter than a flat one, and you can raise its volume on the host if you want. While you drag a boosted band down, that PC plays a little quieter until about a quarter of a second after you let go. That is the preamp's safety hold, and it is deliberate.
+- **Kept per PC.** The host remembers each PC's curve, sends it every time that PC joins, and restores its own curve when it starts. **This PC** shows "Not playing on this PC" while the host is not playing on its own speakers; you can still edit it, and the curve is used once local playback starts.
+
+EQ shifts timing slightly at the bands it changes. A boost delays the sound near that band's centre and a cut advances it. Above 1 kHz the shift is under 1 ms, so it does not matter for staying in sync. It grows toward the bass: at 31 Hz a full +12 dB boost delays the sound by about 21 ms, which is still less than one cycle of the wave. The planned microphone calibration (sub-project 3) will measure each PC with its EQ applied, so the offset it sets will absorb what is left.
+
 ## Ports
 
 | Port | Use |
@@ -98,7 +109,7 @@ If 47802 or 47803 is taken, the audio and clock ports fall back to ephemeral por
 
 ## Files
 
-- Settings: `%AppData%\RhythmSync\settings.json` (device id, name, last host and pairing code, per-device volume and offset).
+- Settings: `%AppData%\RhythmSync\settings.json` (device id, name, last host and pairing code, per-device volume, offset and EQ).
 - Logs: `%AppData%\RhythmSync\logs\` (daily rolling files, 7 kept).
 
 ## The logo

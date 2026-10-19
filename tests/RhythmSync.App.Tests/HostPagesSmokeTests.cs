@@ -46,9 +46,12 @@ public class HostPagesSmokeTests
 
     private static Guid Id(int n) => new($"00000000-0000-0000-0000-{n:D12}");
 
-    private static ConnectedClient Client(int n, string name, SyncState state, double latePct = 0)
+    private static ConnectedClient Client(int n, string name, SyncState state, double latePct = 0, EqGains? eq = null)
         => new(Id(n), name, new IPEndPoint(IPAddress.Loopback, 5000 + n), true,
-            new HeartbeatStats(0.1, latePct, 42, 0.18, 0.21, state), 0.8f, 10, EqGains.Flat);
+            new HeartbeatStats(0.1, latePct, 42, 0.18, 0.21, state), 0.8f, 10, eq ?? EqGains.Flat);
+
+    /// <summary>A curve that matches no preset.</summary>
+    private static readonly EqGains CustomCurve = EqGains.Create(new float[] { 3, 2.5f, 0, 0, -1, 0, 0, 4, 0, -6 });
 
     private static HostViewModel NewHost(string sessionName = "Living Room", HostAudioStatus status = HostAudioStatus.Ok)
         => new(new ShellTests.FakeHost(), () => status, _ => null, (_, _) => { }, "4729", sessionName);
@@ -112,9 +115,10 @@ public class HostPagesSmokeTests
             Assert.True(Shown(stop));
             Assert.Same(Application.Current.FindResource("DangerButton"), stop.Style);
 
+            // The session chip, the This PC card (not playing locally: the routing is broken here), then one per client.
             var chips = Descendants<StatusChip>(tab).Where(c => Shown(c)).ToList();
-            Assert.Equal([StatusKind.Hosting, StatusKind.InSync, StatusKind.Degraded], chips.Select(c => c.Kind));
-            Assert.Equal(["Hosting", "In sync", "Sync is degraded"], chips.Select(c => c.Text));
+            Assert.Equal([StatusKind.Hosting, StatusKind.NotConnected, StatusKind.InSync, StatusKind.Degraded], chips.Select(c => c.Kind));
+            Assert.Equal(["Hosting", LocalSpeakerRowViewModel.NotPlayingText, "In sync", "Sync is degraded"], chips.Select(c => c.Text));
 
             var banner = Assert.Single(Descendants<Banner>(tab), b => Shown(b));
             Assert.Equal(HostViewModel.VbCableNotDefaultBanner, banner.Message);
@@ -143,6 +147,214 @@ public class HostPagesSmokeTests
             UiDispatcher.Render(tab, 960, 640);
             Assert.DoesNotContain(Descendants<StatsPanel>(tab), p => Shown(p));
 
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    private static Border CardOf(DependencyObject root, Func<Border, bool> pick)
+        => Descendants<Border>(root).First(b => Shown(b) && b.Style == Application.Current.FindResource("CardBorder") && pick(b));
+
+    private static Border ClientCard(DependencyObject root, string name)
+        => CardOf(root, b => Descendants<TextBlock>(b).Any(t => t.Text == name));
+
+    [Fact]
+    public void Running_host_page_with_an_expanded_eq_renders_without_errors()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost();
+            host.UpdateClients([Client(1, "Kitchen Laptop", SyncState.InSync, eq: CustomCurve)]);
+            host.Clients[0].Eq.IsExpanded = true;
+            host.ShowStats = true;
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, 960, 640);
+
+            var card = ClientCard(tab, "Kitchen Laptop");
+            var editor = Assert.Single(Descendants<EqEditor>(card));
+            Assert.True(Shown(editor));
+            var sliders = Descendants<Slider>(editor).ToList();
+            Assert.Equal(10, sliders.Count);
+            Assert.Equal(CustomCurve.ToArray().Select(g => (double)g), sliders.Select(s => s.Value));
+            Assert.Equal(EqBands.Labels.Select(l => $"EQ {l} Hz"), sliders.Select(s => AutomationProperties.GetName(s)));
+            Assert.Equal(host.Clients[0].Eq.Bands.Select(b => b.AutomationText), sliders.Select(s => AutomationProperties.GetHelpText(s)));
+            Assert.Same(Application.Current.FindResource("EqBandSlider"), sliders[0].Style);
+
+            // Header and control line.
+            var section = Assert.Single(Descendants<Expander>(card));
+            Assert.True(section.IsExpanded);
+            Assert.Equal("Equalizer", AutomationProperties.GetName(section));
+            Assert.Contains(Descendants<TextBlock>(section), t => t.Text == "EQ" && Shown(t));
+            Assert.Contains(Descendants<TextBlock>(section), t => t.Text == "Custom" && Shown(t));   // the header: no preset matches
+            Assert.Contains(Descendants<TextBlock>(editor), t => t.Text == "Preset" && Shown(t));
+            Assert.Contains(Descendants<TextBlock>(editor), t => t.Text == host.Clients[0].Eq.PreampText && Shown(t));
+            var flat = Assert.Single(Descendants<Button>(editor), b => Equals(b.Content, "Flat"));
+            Assert.Same(Application.Current.FindResource("GhostButton"), flat.Style);
+            var preset = Assert.Single(Descendants<ComboBox>(editor));
+            Assert.Equal("Custom", preset.SelectedItem);
+            Assert.Equal(160, preset.ActualWidth);
+
+            // The value above each band is muted at 0 dB and plain otherwise.
+            var muted = ((SolidColorBrush)Application.Current.FindResource("TextMutedBrush")).Color;
+            var normal = ((SolidColorBrush)Application.Current.FindResource("TextBrush")).Color;
+            var zero = Descendants<TextBlock>(editor).First(t => t.Text == "0" && Shown(t) && t.FontSize == 12);   // 12 px StatText, not the 11 px "0" gridline caption
+            Assert.Equal(muted, ((SolidColorBrush)zero.Foreground).Color);
+            var boosted = Descendants<TextBlock>(editor).First(t => t.Text == "+3" && Shown(t) && t.FontSize == 12);
+            Assert.Equal(normal, ((SolidColorBrush)boosted.Foreground).Color);
+
+            // Dragging a band reaches the view model.
+            sliders[2].Value = 4;
+            Assert.Equal(4, host.Clients[0].Eq.Bands[2].GainDb);
+
+            // Collapsing hides the editor; the header stays.
+            section.IsExpanded = false;
+            UiDispatcher.Render(tab, 960, 640);
+            Assert.False(host.Clients[0].Eq.IsExpanded);
+            Assert.False(Shown(editor));
+            Assert.Contains(Descendants<TextBlock>(section), t => t.Text == "EQ" && Shown(t));
+
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void Eq_is_collapsed_by_default_and_the_chevron_follows_it()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost();
+            host.UpdateClients([Client(1, "Kitchen Laptop", SyncState.InSync)]);
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, 960, 640);
+
+            var card = ClientCard(tab, "Kitchen Laptop");
+            Assert.DoesNotContain(Descendants<EqEditor>(card), e => Shown(e));   // not even built until it is opened
+            Assert.Contains(Descendants<TextBlock>(card), t => t.Text == "Flat" && Shown(t) && t.FontSize == 11);   // the header's caption
+            Assert.Contains(Descendants<TextBlock>(card), t => t.Text == "" && Shown(t));
+            Assert.DoesNotContain(Descendants<TextBlock>(card), t => t.Text == "" && Shown(t));
+
+            host.Clients[0].Eq.IsExpanded = true;
+            UiDispatcher.Render(tab, 960, 640);
+            Assert.True(Shown(Assert.Single(Descendants<EqEditor>(card))));
+            Assert.Contains(Descendants<TextBlock>(card), t => t.Text == "" && Shown(t));
+            Assert.DoesNotContain(Descendants<TextBlock>(card), t => t.Text == "" && Shown(t));
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void Picking_a_preset_while_on_Custom_applies_it_and_the_box_shows_it()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost();
+            host.UpdateClients([Client(1, "Kitchen Laptop", SyncState.InSync, eq: CustomCurve)]);
+            var eq = host.Clients[0].Eq;
+            eq.IsExpanded = true;
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, 960, 640);
+
+            var editor = Assert.Single(Descendants<EqEditor>(ClientCard(tab, "Kitchen Laptop")));
+            var preset = Assert.Single(Descendants<ComboBox>(editor));
+            Assert.Contains("Custom", eq.Presets);
+            Assert.Equal("Custom", preset.SelectedItem);
+
+            var bass = EqPresets.All.First(p => p.Name == "Bass boost").Gains;
+            preset.SelectedItem = "Bass boost";   // "Custom" leaves the list while this selection is being made
+            UiDispatcher.Render(tab, 960, 640);
+
+            Assert.Equal(bass, eq.Gains);
+            Assert.DoesNotContain("Custom", eq.Presets);
+            Assert.Equal("Bass boost", preset.SelectedItem);
+            Assert.Equal("Bass boost", eq.HeaderText);
+
+            // And the Flat button resets from here.
+            var flat = Assert.Single(Descendants<Button>(editor), b => Equals(b.Content, "Flat"));
+            flat.Command.Execute(null);
+            UiDispatcher.Render(tab, 960, 640);
+            Assert.True(eq.Gains.IsFlat);
+            Assert.Equal("Flat", preset.SelectedItem);
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void This_pc_card_renders_playing_and_not_playing()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost(status: HostAudioStatus.Ok);
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, 960, 640);
+
+            var card = ClientCard(tab, "This PC");
+            var name = Assert.Single(Descendants<TextBlock>(card), t => t.Text == "This PC");
+            Assert.Same(Application.Current.FindResource("SubtitleText"), name.Style);
+            var chip = Assert.Single(Descendants<StatusChip>(card));
+            Assert.Equal(StatusKind.Hosting, chip.Kind);
+            Assert.Equal("Playing here", chip.Text);
+
+            // No volume or offset sliders and no stats: just the EQ, collapsed.
+            Assert.DoesNotContain(Descendants<Slider>(card), s => Shown(s));
+            Assert.Empty(Descendants<StatsPanel>(card));
+            Assert.Equal("Equalizer", AutomationProperties.GetName(Assert.Single(Descendants<Expander>(card))));
+            Assert.DoesNotContain(Descendants<EqEditor>(card), e => Shown(e));
+
+            // It sits above the (empty) client list and is not counted as a connected PC.
+            var empty = ClientCard(tab, "Waiting for PCs to join…");
+            Assert.True(card.TranslatePoint(new Point(0, 0), tab).Y < empty.TranslatePoint(new Point(0, 0), tab).Y);
+            Assert.Contains(Descendants<TextBlock>(tab), t => t.Text == "0" && Shown(t) && t.Style == Application.Current.FindResource("CaptionText"));
+
+            // Not playing locally: the same card, still editable, with the other chip.
+            host.LocalSpeaker.IsPlaying = false;
+            host.LocalSpeaker.Eq.IsExpanded = true;
+            UiDispatcher.Render(tab, 960, 640);
+            Assert.Equal(StatusKind.NotConnected, chip.Kind);
+            Assert.Equal("Not playing on this PC", chip.Text);
+            var sliders = Descendants<Slider>(card).Where(s => Shown(s)).ToList();
+            Assert.Equal(10, sliders.Count);
+            Assert.All(sliders, s => Assert.True(s.IsEnabled));
+            Assert.Empty(recorder.Errors);
+
+            host.LocalSpeaker.IsPlaying = true;
+            UiDispatcher.Render(tab, 960, 640);
+            Assert.Equal(StatusKind.Hosting, chip.Kind);
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void Eq_strip_fits_a_client_card_at_the_minimum_window_size()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost();
+            host.UpdateClients([Client(1, "Kitchen Laptop", SyncState.InSync, eq: CustomCurve)]);
+            host.Clients[0].Eq.IsExpanded = true;
+            host.LocalSpeaker.Eq.IsExpanded = true;
+            host.ShowStats = true;
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
+
+            foreach (string owner in new[] { "Kitchen Laptop", "This PC" })
+            {
+                var card = ClientCard(tab, owner);
+                double content = card.ActualWidth - card.Padding.Left - card.Padding.Right - card.BorderThickness.Left - card.BorderThickness.Right;
+                var editor = Assert.Single(Descendants<EqEditor>(card));
+                Assert.True(Shown(editor));
+
+                Assert.True(editor.DesiredSize.Width <= content + 0.5, $"{owner}: the EQ editor wants {editor.DesiredSize.Width} of {content}");
+                double limit = card.ActualWidth - card.Padding.Right - card.BorderThickness.Right + 0.5;
+                foreach (var element in Descendants<FrameworkElement>(editor).Where(e => Shown(e) && e.ActualWidth > 0 && (e is Slider || e is TextBlock || e is Button || e is ComboBox)))
+                    Assert.True(Right(element, card) <= limit, $"{owner}: {element.GetType().Name} sticks out of the card ({Right(element, card)} > {limit})");
+                var sliders = Descendants<Slider>(editor).ToList();
+                Assert.Equal(10, sliders.Count);
+                Assert.All(sliders, s => Assert.Equal(120, s.ActualHeight, 0.5));
+            }
             Assert.Empty(recorder.Errors);
         });
     }
@@ -272,7 +484,7 @@ public class HostPagesSmokeTests
             var name = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == longSession);
             Assert.Equal(TextTrimming.CharacterEllipsis, name.TextTrimming);
             Assert.True(name.ActualWidth < NaturalWidth(longSession, "TitleText") - 50, "the name is trimmed");
-            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting);
+            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting && c.Text == "Hosting");
             var stop = Assert.Single(Descendants<Button>(tab), b => Equals(b.Content, "Stop hosting") && Shown(b));
 
             Assert.True(chip.ActualWidth > 40, "the chip is whole");
@@ -292,7 +504,7 @@ public class HostPagesSmokeTests
             UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
 
             var name = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == "Living Room");
-            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting);
+            var chip = Assert.Single(Descendants<StatusChip>(tab), c => Shown(c) && c.Kind == StatusKind.Hosting && c.Text == "Hosting");
             var stop = Assert.Single(Descendants<Button>(tab), b => Equals(b.Content, "Stop hosting") && Shown(b));
 
             Assert.Equal(NaturalWidth("Living Room", "TitleText"), name.ActualWidth, 0.5);

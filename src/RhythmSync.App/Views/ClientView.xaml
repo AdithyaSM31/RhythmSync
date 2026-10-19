@@ -145,6 +145,8 @@
                             <TextBlock Text="{Binding VolumeText}" Style="{StaticResource CaptionText}" />
                             <TextBlock Text="·" Style="{StaticResource CaptionText}" Margin="6,0" />
                             <TextBlock Text="{Binding OffsetText}" Style="{StaticResource CaptionText}" />
+                            <TextBlock Text="·" Style="{StaticResource CaptionText}" Margin="6,0" />
+                            <TextBlock Text="{Binding EqText}" Style="{StaticResource CaptionText}" />
                         </WrapPanel>
                         <TextBlock Grid.Column="1" Text="{x:Static vm:ClientViewModel.SetOnHostText}" Style="{StaticResource CaptionText}"
                                    FontStyle="Italic" Margin="12,0,0,0" VerticalAlignment="Center" />

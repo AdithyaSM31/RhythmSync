@@ -1,0 +1,70 @@
+<!--
+    Expander (EQ spec §7.2): the keyed EqSection style, a collapsible section of a Card. The header line is a chevron
+    (FontIcons E76C collapsed, E70D expanded), the title "EQ" and a caption that is the DataContext's HeaderText; clicking
+    it, or Space or Enter while it has keyboard focus, toggles the section. Below a 1 px CardBorder hairline the content
+    shows while expanded. IsExpanded is bound two-way to the DataContext's IsExpanded (an EqViewModel), and the section
+    is announced as "Equalizer". A separate piece, so a later section of a Card can take the same shape.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+        <ResourceDictionary Source="FocusVisual.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <Style x:Key="EqSectionHeaderToggle" TargetType="ToggleButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="KeyboardNavigation.AcceptsReturn" Value="True" />   <!-- Enter toggles, like Space -->
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StudioFocusVisual}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="{TemplateBinding Background}" Padding="0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="Chevron" Text="&#xE76C;" FontFamily="{StaticResource FontIcons}" FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" Width="14" VerticalAlignment="Center" />
+                            <TextBlock Text="EQ" Style="{StaticResource SubtitleText}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding HeaderText}" Style="{StaticResource CaptionText}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Chevron" Property="Text" Value="&#xE70D;" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="EqSection" TargetType="Expander">
+        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        <Setter Property="AutomationProperties.Name" Value="Equalizer" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <StackPanel>
+                        <ToggleButton Style="{StaticResource EqSectionHeaderToggle}"
+                                      IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      AutomationProperties.Name="{Binding Path=(AutomationProperties.Name), RelativeSource={RelativeSource TemplatedParent}}" />
+                        <StackPanel x:Name="Body" Visibility="Collapsed">
+                            <Border Height="1" Background="{StaticResource CardBorderBrush}" Margin="0,8,0,10" />
+                            <ContentPresenter />
+                        </StackPanel>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

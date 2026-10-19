@@ -138,6 +138,36 @@ public class ThemeTests
     }
 
     [Fact]
+    public void Eq_styles_resolve()
+    {
+        UiDispatcher.Run(() =>
+        {
+            Assert.Equal(typeof(Slider), Assert.IsType<Style>(Find("EqBandSlider")).TargetType);
+            Assert.Equal(typeof(Expander), Assert.IsType<Style>(Find("EqSection")).TargetType);
+
+            // Both render, bound to a real EQ view model, without a binding error.
+            using var recorder = new BindingErrorRecorder();
+            var eq = new RhythmSync.App.ViewModels.EqViewModel(RhythmSync.Core.Audio.Eq.EqGains.Flat) { IsExpanded = true };
+            var slider = new Slider { Style = (Style)Find("EqBandSlider"), DataContext = eq.Bands[0] };
+            slider.SetBinding(RangeBase.ValueProperty, new Binding("GainDb") { Mode = BindingMode.TwoWay });
+            var section = new Expander { Style = (Style)Find("EqSection"), DataContext = eq, Content = new TextBlock { Text = "body" } };
+            UiDispatcher.Render(new StackPanel { Children = { slider, section } });
+            Assert.Empty(recorder.Errors);
+            Assert.Equal("Equalizer", System.Windows.Automation.AutomationProperties.GetName(section));
+            Assert.Equal(Orientation.Vertical, slider.Orientation);
+            Assert.Equal(-12, slider.Minimum);
+            Assert.Equal(12, slider.Maximum);
+            Assert.Equal(0.5, slider.SmallChange);
+            Assert.Equal(3, slider.LargeChange);
+
+            // The expander header follows the view model, both ways.
+            Assert.True(section.IsExpanded);
+            section.IsExpanded = false;
+            Assert.False(eq.IsExpanded);
+        });
+    }
+
+    [Fact]
     public void Styled_controls_render_without_binding_errors()
     {
         UiDispatcher.Run(() =>

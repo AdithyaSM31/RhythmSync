@@ -307,6 +307,30 @@ public class JoinPageSmokeTests
     }
 
     [Fact]
+    public void Joined_page_shows_the_eq_text()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var control = new FakeControl { Eq = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains };
+            var page = NewPage([Living, Office], control);
+            Join(page, control, Living, SyncState.InSync);
+            UiDispatcher.Render(page.View, 960, 640);
+
+            Text(page.View, "EQ: Laptop speakers");
+            Assert.True(HasText(page.View, ClientViewModel.SetOnHostText));
+            Assert.Empty(Descendants<Slider>(page.View));   // the client only reads the host's settings
+
+            control.Eq = EqGains.Flat;
+            control.Raise();
+            page.Vm.Refresh();
+            UiDispatcher.Render(page.View, 960, 640);
+            Text(page.View, "EQ: Flat");
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
     public void The_status_card_is_guarded_by_the_connection_not_by_the_joined_name()
     {
         UiDispatcher.Run(() =>

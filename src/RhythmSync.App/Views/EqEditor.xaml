@@ -1,0 +1,70 @@
+<UserControl x:Class="RhythmSync.App.Views.EqEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             HorizontalAlignment="Left">
+    <!--
+        The EQ of one device (EQ spec §7.2). DataContext: an EqViewModel (inherited from the EqSection it sits in).
+        A control line, then ten band sliders over faint gridlines at +12, 0 and -12 dB. The Grid is as wide as the strip,
+        so the control line's preamp readout ends at the strip's right edge.
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" LastChildFill="False">
+            <TextBlock Text="{Binding PreampText}" Style="{StaticResource StatText}" DockPanel.Dock="Right"
+                       Margin="12,0,0,0" VerticalAlignment="Center" />
+            <TextBlock Text="Preset" Style="{StaticResource CaptionText}" DockPanel.Dock="Left" Margin="0,0,8,0" VerticalAlignment="Center" />
+            <!-- Two-way on SelectedItem: picking a preset while on Custom removes "Custom" from the list, which the view model survives. -->
+            <ComboBox Width="160" DockPanel.Dock="Left" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}"
+                      IsSynchronizedWithCurrentItem="False" AutomationProperties.Name="Preset" />
+            <Button Content="Flat" Command="{Binding FlatCommand}" Style="{StaticResource GhostButton}" DockPanel.Dock="Left"
+                    Margin="8,0,0,0" AutomationProperties.Name="Flat" />
+        </DockPanel>
+
+        <Grid Grid.Row="1" Margin="0,12,0,0">
+            <!-- Gridlines and their captions. They start 18 px down, below the value line, so that +12, 0 and -12 meet the thumb
+                 centres of the 120 px sliders (the thumb's centre travels from 8 px to 112 px). -->
+            <Grid Height="120" VerticalAlignment="Top" Margin="0,18,0,0" IsHitTestVisible="False">
+                <Border Height="1" VerticalAlignment="Top" Margin="32,8,0,0" Background="{StaticResource CardBorderBrush}" />
+                <Border Height="1" VerticalAlignment="Top" Margin="32,60,0,0" Background="{StaticResource CardBorderBrush}" />
+                <Border Height="1" VerticalAlignment="Top" Margin="32,112,0,0" Background="{StaticResource CardBorderBrush}" />
+                <TextBlock Text="+12" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,1,0,0" />
+                <TextBlock Text="0" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,53,0,0" />
+                <TextBlock Text="&#x2212;12" Style="{StaticResource CaptionText}" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,105,0,0" />
+            </Grid>
+
+            <ItemsControl ItemsSource="{Binding Bands}" Margin="32,0,0,0" Focusable="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Width="42">
+                            <TextBlock Text="{Binding GainText}" Height="18" TextAlignment="Center" HorizontalAlignment="Stretch">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource StatText}">
+                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding GainDb}" Value="0">
+                                                <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <Slider Style="{StaticResource EqBandSlider}" HorizontalAlignment="Center" Value="{Binding GainDb, Mode=TwoWay}"
+                                    AutomationProperties.Name="{Binding Label, StringFormat='EQ {0} Hz'}"
+                                    AutomationProperties.HelpText="{Binding AutomationText}" />
+                            <TextBlock Text="{Binding Label}" Style="{StaticResource CaptionText}" TextAlignment="Center" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </Grid>
+</UserControl>
