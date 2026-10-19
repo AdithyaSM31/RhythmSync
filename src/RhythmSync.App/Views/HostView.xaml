@@ -103,9 +103,27 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="{Binding OffsetText}" Style="{StaticResource CaptionText}" />
+                                        <!-- Delay: a drag commits once, 300 ms after it stops (every change resyncs this client with a brief fade). -->
                                         <Slider Minimum="-100" Maximum="100" LargeChange="10" SmallChange="1" TickFrequency="10"
-                                                Value="{Binding OffsetMs, Mode=TwoWay}" Margin="0,4,0,0"
+                                                Value="{Binding OffsetMs, Mode=TwoWay, Delay=300}" Margin="0,4,0,0"
                                                 AutomationProperties.Name="{Binding Name, StringFormat='Offset of {0} in milliseconds'}" />
+                                        <!-- On the line under the slider, so the controls fit the minimum page width. -->
+                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Content="&#x2212;1" Command="{Binding DecreaseOffsetCommand}" Style="{StaticResource SecondaryButton}"
+                                                    MinWidth="34" Padding="0,3" FontSize="12"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat='Offset of {0} minus 1 millisecond'}" />
+                                            <Button Content="+1" Command="{Binding IncreaseOffsetCommand}" Style="{StaticResource SecondaryButton}"
+                                                    MinWidth="34" Padding="0,3" FontSize="12" Margin="6,0,0,0"
+                                                    AutomationProperties.Name="{Binding Name, StringFormat='Offset of {0} plus 1 millisecond'}" />
+                                            <!-- Enter and leaving the box apply the typed value; text that is not a number reverts to the current offset. -->
+                                            <TextBox Width="56" Margin="10,0,0,0" Padding="6,3" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"
+                                                     Text="{Binding OffsetInput, UpdateSourceTrigger=PropertyChanged}" LostFocus="OffsetInput_LostFocus"
+                                                     AutomationProperties.Name="{Binding Name, StringFormat='Exact offset of {0} in milliseconds'}">
+                                                <TextBox.InputBindings>
+                                                    <KeyBinding Key="Return" Command="{Binding CommitOffsetInputCommand}" />
+                                                </TextBox.InputBindings>
+                                            </TextBox>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Grid>
 

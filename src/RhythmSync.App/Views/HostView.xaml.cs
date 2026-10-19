@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using RhythmSync.App.ViewModels;
 
 namespace RhythmSync.App.Views;
 
@@ -15,6 +16,13 @@ public partial class HostView : UserControl
     public HostView()
     {
         InitializeComponent();
+    }
+
+    /// <summary>Leaving a client's offset box applies what was typed (Enter is a key binding on the box).</summary>
+    private void OffsetInput_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ClientRowViewModel row })
+            row.CommitOffsetInputCommand.Execute(null);
     }
 
     public object? SpeakerPicker

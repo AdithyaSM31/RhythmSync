@@ -50,6 +50,40 @@ public class ViewMarkupTests
     }
 
     [Fact]
+    public void The_offset_slider_commits_once_after_dragging_stops_not_every_step()
+    {
+        var slider = ByAutomationName(LoadView("HostView.xaml"), "Slider", "{Binding Name, StringFormat='Offset of {0} in milliseconds'}");
+
+        string binding = (string)slider.Attribute("Value")!;
+        Assert.Contains("Binding OffsetMs", binding);
+        Assert.Contains("Delay=300", binding);   // a drag is one change, not a resync per step
+    }
+
+    [Fact]
+    public void Each_client_row_has_offset_step_buttons_and_an_exact_value_box()
+    {
+        var view = LoadView("HostView.xaml");
+
+        var minus = ByAutomationName(view, "Button", "{Binding Name, StringFormat='Offset of {0} minus 1 millisecond'}");
+        var plus = ByAutomationName(view, "Button", "{Binding Name, StringFormat='Offset of {0} plus 1 millisecond'}");
+        Assert.Contains("DecreaseOffsetCommand", (string)minus.Attribute("Command")!);
+        Assert.Contains("IncreaseOffsetCommand", (string)plus.Attribute("Command")!);
+        Assert.Contains("SecondaryButton", (string)minus.Attribute("Style")!);
+        Assert.Contains("SecondaryButton", (string)plus.Attribute("Style")!);
+
+        var box = ByAutomationName(view, "TextBox", "{Binding Name, StringFormat='Exact offset of {0} in milliseconds'}");
+        Assert.Contains("Binding OffsetInput", (string)box.Attribute("Text")!);
+        Assert.Equal("56", (string)box.Attribute("Width")!);
+        Assert.NotNull(box.Attribute("LostFocus"));   // leaving the box commits
+        var enter = Assert.Single(box.Descendants(Wpf + "KeyBinding"));   // so does Enter
+        Assert.Equal("Return", (string)enter.Attribute("Key")!);
+        Assert.Contains("CommitOffsetInputCommand", (string)enter.Attribute("Command")!);
+
+        // The caption stays.
+        Assert.Contains(view.Descendants(Wpf + "TextBlock"), t => (string?)t.Attribute("Text") == "{Binding OffsetText}");
+    }
+
+    [Fact]
     public void The_running_host_screen_offers_the_local_speaker_picker()
     {
         var view = LoadView("HostTabView.xaml");

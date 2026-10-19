@@ -260,6 +260,67 @@ public class HostPagesSmokeTests
     }
 
     [Fact]
+    public void Client_row_offset_controls_fit_the_minimum_width_and_drive_the_offset()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var host = NewHost();
+            host.UpdateClients([Client(1, "Kitchen Laptop", SyncState.Degraded, latePct: 9)]);
+            host.ShowStats = true;
+            var row = host.Clients[0];
+            var tab = NewTab(host);
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
+
+            Button ButtonNamed(string name) => Assert.Single(Descendants<Button>(tab), b => AutomationProperties.GetName(b) == name && Shown(b));
+            var minus = ButtonNamed("Offset of Kitchen Laptop minus 1 millisecond");
+            var plus = ButtonNamed("Offset of Kitchen Laptop plus 1 millisecond");
+            var box = Assert.Single(Descendants<TextBox>(tab), t => AutomationProperties.GetName(t) == "Exact offset of Kitchen Laptop in milliseconds" && Shown(t));
+            var slider = Assert.Single(Descendants<Slider>(tab), s => AutomationProperties.GetName(s) == "Offset of Kitchen Laptop in milliseconds");
+            Assert.Same(Application.Current.FindResource("SecondaryButton"), minus.Style);
+            Assert.Same(Application.Current.FindResource("SecondaryButton"), plus.Style);
+            Assert.Equal(56, box.ActualWidth, 0.5);
+            Assert.Equal("10", box.Text);   // the client's stored offset
+
+            // Everything stays inside the card at the minimum width, and the client name is not squeezed.
+            var card = Descendants<Border>(tab).First(b => Shown(b) && b.Style == Application.Current.FindResource("CardBorder")
+                && Descendants<TextBlock>(b).Any(t => t.Text == "Kitchen Laptop"));
+            foreach (FrameworkElement e in new FrameworkElement[] { minus, plus, box, slider })
+            {
+                Assert.True(e.ActualWidth > 0);
+                Assert.True(Right(e, card) <= card.ActualWidth + 0.5, $"'{AutomationProperties.GetName(e)}' sticks out of its card");
+            }
+            var name = Assert.Single(Descendants<TextBlock>(tab), t => t.Text == "Kitchen Laptop");
+            Assert.True(name.ActualWidth >= NaturalWidth("Kitchen Laptop", "SubtitleText") - 0.5, "the name is not squeezed");
+
+            // The buttons step the offset by 1 ms, and the box follows.
+            plus.Command!.Execute(plus.CommandParameter);
+            Assert.Equal(11, row.OffsetMs);
+            minus.Command!.Execute(minus.CommandParameter);
+            minus.Command.Execute(minus.CommandParameter);
+            Assert.Equal(9, row.OffsetMs);
+            UiDispatcher.Render(tab, MinPageWidth, MinPageHeight);
+            Assert.Equal("9", box.Text);
+            Assert.Equal(9, slider.Value);
+
+            // Typing and leaving the box commits; Enter is bound to the same command.
+            box.Text = "-12.5";
+            Assert.Equal(9, row.OffsetMs);   // not yet
+            box.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Assert.Equal(-12.5, row.OffsetMs);
+            Assert.Equal("-12.5", box.Text);
+            var enter = Assert.Single(box.InputBindings.OfType<System.Windows.Input.KeyBinding>());
+            Assert.Equal(System.Windows.Input.Key.Return, enter.Key);
+            box.Text = "abc";
+            enter.Command!.Execute(enter.CommandParameter);
+            Assert.Equal("-12.5", box.Text);   // invalid text reverts
+            Assert.Equal(-12.5, row.OffsetMs);
+
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
     public void Session_name_ellipsizes_while_the_chip_and_stop_button_stay_whole()
     {
         UiDispatcher.Run(() =>
