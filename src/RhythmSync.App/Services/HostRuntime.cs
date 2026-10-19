@@ -483,7 +483,7 @@ public sealed class HostRuntime : IHostRuntime
         try
         {
             var local = new ClientPipeline(run.SessionId, new IdentityClockMapping(), output.SampleRate);
-            local.Eq.SetGains(_localEq);   // before the output starts, so the first audio is already equalised
+            local.Eq.SetGainsImmediate(_localEq);   // the output has not started: the first audio is already on the curve
             local.Scheduler.ApplyLatency(0, run.LatencyMs);
             Action handler = () =>
             {

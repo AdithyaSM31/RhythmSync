@@ -78,6 +78,22 @@ public sealed class EqProcessor : IAudioProcessor
     }
 
     /// <summary>
+    /// Sets new band gains and jumps to them at once: the target is published as <see cref="SetGains"/> does, then the
+    /// current band gains, coefficients and preamp are set straight to it and the filter state is zeroed, so the next
+    /// <see cref="Process"/> call starts on the curve instead of fading in from Flat. For a processor that has not
+    /// started playing yet. Call only while no <see cref="Process"/> call can run, like <see cref="SetSampleRate"/>;
+    /// it may race <see cref="SetGains"/> and <see cref="SetSampleRate"/>.
+    /// </summary>
+    public void SetGainsImmediate(EqGains gains)
+    {
+        ArgumentNullException.ThrowIfNull(gains);
+        lock (_control)
+        {
+            Retune(BuildTarget(gains, _sampleRate));
+        }
+    }
+
+    /// <summary>
     /// Retunes the filters for <paramref name="sampleRate"/>, zeroes the filter state and jumps straight to the
     /// target (no ramp). Call only while no <see cref="Process"/> call can run; it may race <see cref="SetGains"/>.
     /// </summary>
@@ -249,7 +265,8 @@ public sealed class EqProcessor : IAudioProcessor
 
     // Runs one sub-block of `frames` frames through every active band, then applies the preamp. A moving band's
     // coefficients, and the linear preamp, are interpolated per sample so the last frame lands on the end values.
-    // Every interpolated filter is stable: the (a1, a2) stability triangle is convex.
+    // Each interpolated coefficient set is stable, because the (a1, a2) stability triangle is convex and the
+    // endpoints are inside it. The change within a sub-block is small, so the filter does not click.
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Filter(Span<float> block, int channels, int frames, double preampFrom, double preampTo)
     {

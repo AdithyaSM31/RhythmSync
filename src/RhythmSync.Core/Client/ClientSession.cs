@@ -419,7 +419,7 @@ public sealed class ClientSession : IAsyncDisposable
         }
 
         pipeline.Gain.Gain = _volume;
-        pipeline.Eq.SetGains(_eq);
+        pipeline.Eq.SetGainsImmediate(_eq);   // the output has not started: the first audio is already on the curve
         pipeline.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
         c.Pipeline = pipeline;
         c.Window = new StatsWindow();
@@ -764,6 +764,7 @@ public sealed class ClientSession : IAsyncDisposable
 
     private void ApplyEqLocked(EqGains eq)
     {
+        if (eq == _eq) return;   // a new pipeline takes _eq when it is created (StartPlaybackLocked)
         _eq = eq;
         if (_conn?.Pipeline is { } p) p.Eq.SetGains(_eq);
     }

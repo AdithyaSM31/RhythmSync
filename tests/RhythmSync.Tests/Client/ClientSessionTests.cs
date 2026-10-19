@@ -710,6 +710,27 @@ public class ClientSessionTests
     }
 
     [Fact]
+    public async Task An_unchanged_eq_is_not_reapplied_when_only_the_volume_changes()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var id = Guid.NewGuid();
+        await using var client = NewClient(new FakeOutputFactory(), id: id);
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, 0, Laptop);
+        await TickUntil(() => client.Eq == Laptop, client, TimeSpan.FromSeconds(1), () => rig);
+        var applied = client.Pipeline!.Eq.Gains;   // each message decodes to a new EqGains, so a reapplied EQ would replace this one
+
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 0, Laptop);
+        await TickUntil(() => client.Volume == 0.5f, client, TimeSpan.FromSeconds(1), () => rig);
+        Assert.Same(applied, client.Pipeline!.Eq.Gains);
+
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 0, EqGains.Flat);   // a real change still applies
+        await TickUntil(() => client.Eq == EqGains.Flat, client, TimeSpan.FromSeconds(1), () => rig);
+        Assert.Equal(EqGains.Flat, client.Pipeline!.Eq.Gains);
+    }
+
+    [Fact]
     public async Task A_malformed_eq_is_ignored_and_counted_and_the_connection_stays()
     {
         using var listener = new FakeHost();

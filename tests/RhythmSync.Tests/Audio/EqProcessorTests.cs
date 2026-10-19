@@ -322,6 +322,43 @@ public class EqProcessorTests
     }
 
     [Fact]
+    public void SetGainsImmediate_starts_on_the_curve_instead_of_fading_in_from_Flat()
+    {
+        var curve = Preset("Laptop speakers");
+        var input = Noise(7, 2 * 960, 0.5f); // 960 stereo frames: the first 20 ms, inside the 10 ms-tau ramp
+
+        // The settled reference: gains set long ago, the filters at rest with zero state.
+        var settled = new EqProcessor(Rate);
+        settled.SetGains(curve);
+        ProcessInBuffers(settled, new float[2 * Rate], 2);
+        var expected = (float[])input.Clone();
+        ProcessInBuffers(settled, expected, 2);
+
+        var immediate = new EqProcessor(Rate);
+        immediate.SetGainsImmediate(curve);
+        Assert.Equal(curve, immediate.Gains);
+        for (int band = 0; band < EqBands.Count; band++)
+            Assert.Equal(EqCurve.IsActive(band, Rate) ? curve[band] : 0.0, immediate.CurrentGainDb(band));
+        Assert.Equal(curve, immediate.CurrentTarget.Gains);
+        Assert.True(immediate.StateIsZero);
+        var actual = (float[])input.Clone();
+        ProcessInBuffers(immediate, actual, 2);
+
+        double worst = 0;
+        for (int i = 0; i < actual.Length; i++) worst = Math.Max(worst, Math.Abs(actual[i] - expected[i]));
+        Assert.True(worst < 1e-5, $"first buffer differs from the settled response by {worst}");
+
+        // Control: SetGains on a fresh processor really does fade in, so the comparison above has teeth.
+        var fading = new EqProcessor(Rate);
+        fading.SetGains(curve);
+        var faded = (float[])input.Clone();
+        ProcessInBuffers(fading, faded, 2);
+        double fadeWorst = 0;
+        for (int i = 0; i < faded.Length; i++) fadeWorst = Math.Max(fadeWorst, Math.Abs(faded[i] - expected[i]));
+        Assert.True(fadeWorst > 100 * worst && fadeWorst > 1e-3, $"SetGains differed by only {fadeWorst}");
+    }
+
+    [Fact]
     public void SetSampleRate_retunes_and_resets()
     {
         var gains = EqGains.Flat.WithBand(5, 12);
