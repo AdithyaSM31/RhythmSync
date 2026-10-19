@@ -422,6 +422,37 @@ public class ClientViewModelTests
         Assert.Equal("Offset: 0 ms", vm.OffsetText);
     }
 
+    [Fact]
+    public void EqText_names_flat_a_preset_or_custom()
+    {
+        var control = new FakeControl();
+        var vm = Make(control: control);
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        Assert.Equal("EQ: Flat", vm.EqText);
+
+        control.Eq = EqPresets.All.First(p => p.Name == "Bass boost").Gains;
+        vm.Refresh();
+        Assert.Equal("EQ: Bass boost", vm.EqText);
+        Assert.Contains(nameof(ClientViewModel.EqText), changed);
+
+        control.Eq = EqGains.Flat.WithBand(4, 1.5);
+        vm.Refresh();
+        Assert.Equal("EQ: Custom", vm.EqText);
+
+        control.Eq = EqGains.Flat;
+        vm.Refresh();
+        Assert.Equal("EQ: Flat", vm.EqText);
+    }
+
+    [Fact]
+    public void EqText_is_set_at_construction()
+    {
+        var control = new FakeControl { Eq = EqPresets.All.First(p => p.Name == "Treble cut").Gains };
+        Assert.Equal("EQ: Treble cut", Make(control: control).EqText);
+        Assert.Equal("EQ: Flat", Make().EqText);
+    }
+
     // ---- leave -------------------------------------------------------------------------------------------------------
 
     [Fact]

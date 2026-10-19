@@ -320,7 +320,8 @@ public sealed class HostRuntime : IHostRuntime
             audioStatus: () => EvaluateAudio(run),
             storedSettings: id => _settings.Current.Devices.TryGetValue(id, out var d) ? d : null,
             saveSettings: (id, d) => _settings.Update(s => s with { Devices = new Dictionary<Guid, DeviceSettings>(s.Devices) { [id] = d } }),
-            pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings);
+            pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings,
+            setLocalEq: SetLocalEq, localDeviceId: _settings.Current.DeviceId);
         vm.LatencyChanged += ms => _settings.Update(s => s with { TargetLatencyMs = ms });
         return vm;
     }

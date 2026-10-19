@@ -246,6 +246,22 @@ public class TrayFlyoutViewModelTests
     }
 
     [Fact]
+    public void Flyout_volume_keeps_the_row_eq()
+    {
+        var rig = new Rig();
+        var laptop = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+        var host = rig.StartHosting("Living Room", Pc(IdA, "Kitchen Laptop"));
+        host.Clients[0].Eq.SelectedPreset = "Laptop speakers";
+        rig.HostControl.Settings.Clear();
+        rig.Saved.Clear();
+
+        rig.Vm.Clients[0].Volume = 0.5f;
+
+        Assert.Equal((IdA, 0.5f, 10d, laptop), Assert.Single(rig.HostControl.Settings));
+        Assert.Equal(laptop.ToArray(), Assert.Single(rig.Saved).Settings.EqGainsDb);
+    }
+
+    [Fact]
     public async Task Actions_invoke_commands_and_request_close()
     {
         var rig = new Rig();

@@ -29,6 +29,8 @@ public sealed partial class HostViewModel : ObservableObject
     private readonly Func<HostAudioStatus> _audioStatus;
     private readonly Func<Guid, DeviceSettings?> _storedSettings;
     private readonly Action<Guid, DeviceSettings> _saveSettings;
+    private readonly Action<EqGains>? _setLocalEq;
+    private readonly Guid _localDeviceId;
 
     private string _sessionName;
     private int _latencyMs;
@@ -42,14 +44,18 @@ public sealed partial class HostViewModel : ObservableObject
     /// <param name="sessionName">The name announced to the LAN.</param>
     /// <param name="latencyMs">The host's current target latency.</param>
     /// <param name="openSoundSettings">Opens the Windows sound settings; defaults to <c>ms-settings:sound</c>.</param>
+    /// <param name="setLocalEq">Applies the EQ of this PC's own speakers when the user changes it; null applies nothing.</param>
+    /// <param name="localDeviceId">The device id this PC's own settings are stored under; its EQ is saved only when this is not <see cref="Guid.Empty"/>.</param>
     public HostViewModel(IHostControl host, Func<HostAudioStatus> audioStatus, Func<Guid, DeviceSettings?> storedSettings,
         Action<Guid, DeviceSettings> saveSettings, string pairingCode = "", string sessionName = "", int latencyMs = 200,
-        Action? openSoundSettings = null)
+        Action? openSoundSettings = null, Action<EqGains>? setLocalEq = null, Guid localDeviceId = default)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _audioStatus = audioStatus ?? throw new ArgumentNullException(nameof(audioStatus));
         _storedSettings = storedSettings ?? throw new ArgumentNullException(nameof(storedSettings));
         _saveSettings = saveSettings ?? throw new ArgumentNullException(nameof(saveSettings));
+        _setLocalEq = setLocalEq;
+        _localDeviceId = localDeviceId;
         PairingCode = pairingCode;
         _sessionName = sessionName;
         _latencyMs = NormalizeLatency(latencyMs);
@@ -61,6 +67,10 @@ public sealed partial class HostViewModel : ObservableObject
             catch (Exception e) { Log.Warning(e, "Could not open the Windows sound settings"); }
         });
 
+        LocalSpeaker = new LocalSpeakerRowViewModel(EqGains.FromStored(SafeStored(localDeviceId)?.EqGainsDb));
+        LocalSpeaker.IsPlaying = _status == HostAudioStatus.Ok;
+        LocalSpeaker.Eq.Changed += OnLocalEqChangedByUser;
+
         Clients.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoClients));
         RefreshAudioStatus();
     }
@@ -71,6 +81,9 @@ public sealed partial class HostViewModel : ObservableObject
     public string PairingCode { get; }
 
     public ObservableCollection<ClientRowViewModel> Clients { get; } = new();
+
+    /// <summary>The "This PC" row: this PC's own speakers and their EQ. It is not part of <see cref="Clients"/>.</summary>
+    public LocalSpeakerRowViewModel LocalSpeaker { get; }
 
     /// <summary>True while no client is connected.</summary>
     public bool HasNoClients => Clients.Count == 0;
@@ -115,6 +128,7 @@ public sealed partial class HostViewModel : ObservableObject
         private set
         {
             if (!SetProperty(ref _status, value)) return;
+            LocalSpeaker.IsPlaying = value == HostAudioStatus.Ok;   // local playback runs only while the routing is fine
             OnPropertyChanged(nameof(AudioBanner));
             OnPropertyChanged(nameof(HasAudioBanner));
         }
@@ -154,7 +168,7 @@ public sealed partial class HostViewModel : ObservableObject
 
     /// <summary>
     /// Brings the rows in line with the host's client list: rows of departed clients are removed, new clients get a row
-    /// (and their remembered volume/offset are sent to the host once), and existing rows are updated in place.
+    /// (and their remembered volume, offset and EQ are sent to the host once), and existing rows are updated in place.
     /// </summary>
     public void UpdateClients(IReadOnlyList<ConnectedClient> clients)
     {
@@ -172,12 +186,13 @@ public sealed partial class HostViewModel : ObservableObject
             if (row is not null)
             {
                 row.Apply(client);
-                // The rows are the source of truth for volume and offset: only this view model changes them on the host. A
-                // difference therefore means the client reconnected (a new connection starts at volume 1, offset 0): push ours again.
-                if (client.Volume != row.Volume || client.OffsetMs != row.OffsetMs)
+                // The rows are the source of truth for volume, offset and EQ: only this view model changes them on the host. A
+                // difference therefore means the client reconnected (a new connection starts at volume 1, offset 0, flat): push ours again.
+                if (client.Volume != row.Volume || client.OffsetMs != row.OffsetMs || client.Eq != row.Eq.Gains)
                 {
                     var stale = row;
-                    Send(() => _host.SetDeviceSettingsAsync(id, stale.Volume, stale.OffsetMs, EqGains.Flat), "re-sending a reconnected client's settings");
+                    var staleEq = row.Eq.Gains;
+                    Send(() => _host.SetDeviceSettingsAsync(id, stale.Volume, stale.OffsetMs, staleEq), "re-sending a reconnected client's settings");
                 }
                 continue;
             }
@@ -185,9 +200,10 @@ public sealed partial class HostViewModel : ObservableObject
             row = new ClientRowViewModel(client, OnRowChangedByUser);
             if (SafeStored(id) is { } stored)
             {
-                row.Adopt(stored.Volume, stored.OffsetMs);
+                row.Adopt(stored.Volume, stored.OffsetMs, EqGains.FromStored(stored.EqGainsDb));
                 var added = row;
-                Send(() => _host.SetDeviceSettingsAsync(id, added.Volume, added.OffsetMs, EqGains.Flat), "restoring a client's settings");
+                var addedEq = row.Eq.Gains;
+                Send(() => _host.SetDeviceSettingsAsync(id, added.Volume, added.OffsetMs, addedEq), "restoring a client's settings");
             }
             Clients.Add(row);
         }
@@ -208,10 +224,26 @@ public sealed partial class HostViewModel : ObservableObject
         Guid id = row.DeviceId;
         float volume = row.Volume;
         double offset = row.OffsetMs;
-        Send(() => _host.SetDeviceSettingsAsync(id, volume, offset, EqGains.Flat), "sending a client's settings");
-        try { _saveSettings(id, new DeviceSettings(volume, offset)); }
+        var eq = row.Eq.Gains;   // a volume or offset change carries the row's current EQ along
+        Send(() => _host.SetDeviceSettingsAsync(id, volume, offset, eq), "sending a client's settings");
+        try { _saveSettings(id, new DeviceSettings(volume, offset, StoredEq(eq))); }
         catch (Exception e) { Log.Warning(e, "Saving the settings of {Device} failed", id); }
     }
+
+    /// <summary>The user changed the EQ of this PC's speakers: apply it to local playback and remember it.</summary>
+    private void OnLocalEqChangedByUser()
+    {
+        var eq = LocalSpeaker.Eq.Gains;
+        try { _setLocalEq?.Invoke(eq); }
+        catch (Exception e) { Log.Warning(e, "Applying the EQ of this PC failed"); }
+
+        if (_localDeviceId == Guid.Empty) return;
+        try { _saveSettings(_localDeviceId, new DeviceSettings(1f, 0, StoredEq(eq))); }
+        catch (Exception e) { Log.Warning(e, "Saving the settings of this PC failed"); }
+    }
+
+    /// <summary>Flat is stored as null.</summary>
+    private static float[]? StoredEq(EqGains eq) => eq.IsFlat ? null : eq.ToArray();
 
     // ---- helpers -----------------------------------------------------------------------------------------------------
 
