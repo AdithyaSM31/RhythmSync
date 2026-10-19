@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Protocol;
 
@@ -12,13 +13,13 @@ public sealed record HostSessionOptions(string Name, int ControlPort = 47801, in
     int TargetLatencyMs = 200, int MaxClients = 8, string? PairingCode = null);
 
 public sealed record ConnectedClient(Guid DeviceId, string Name, IPEndPoint AudioEndPoint, bool Ready, HeartbeatStats? LastStats,
-    float Volume, double OffsetMs);
+    float Volume, double OffsetMs, EqGains Eq);
 
 public interface IHostControl
 {
     Task SetLatencyAsync(int ms);
 
-    Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs);
+    Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq);
 }
 
 /// <summary>
@@ -184,8 +185,9 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
+    public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
     {
+        ArgumentNullException.ThrowIfNull(eq);
         // The control JSON allows NaN/Infinity literals, so the only place to stop them is before they are sent.
         if (!float.IsFinite(volume)) throw new ArgumentException("Volume must be a finite number.", nameof(volume));
         if (!double.IsFinite(offsetMs)) throw new ArgumentException("Offset must be a finite number.", nameof(offsetMs));
@@ -197,9 +199,9 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
         {
             target = _joined.Find(c => c.Info!.DeviceId == deviceId);
             if (target is null) return Task.CompletedTask;   // the device left in the meantime
-            target.Info = target.Info! with { Volume = volume, OffsetMs = offsetMs };
+            target.Info = target.Info! with { Volume = volume, OffsetMs = offsetMs, Eq = eq };
         }
-        return TrySendAsync(target, new SetDeviceSettings(volume, offsetMs));
+        return TrySendAsync(target, new SetDeviceSettings(volume, offsetMs, eq.ToArray()));
     }
 
     public async Task SetLatencyAsync(int ms)
@@ -430,7 +432,7 @@ public sealed class HostSession : IHostControl, IAsyncDisposable
                         }
 
                         c.Info = new ConnectedClient(hello.DeviceId, name!, new IPEndPoint(c.RemoteAddress, hello.AudioPort),
-                                                     Ready: false, LastStats: null, Volume: 1f, OffsetMs: 0);
+                                                     Ready: false, LastStats: null, Volume: 1f, OffsetMs: 0, Eq: EqGains.Flat);
                         _joined.Add(c);
                         joined = true;
                     }

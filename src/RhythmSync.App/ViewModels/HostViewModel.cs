@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Config;
 using RhythmSync.Core.Host;
 using RhythmSync.Platform.Windows;
@@ -176,7 +177,7 @@ public sealed partial class HostViewModel : ObservableObject
                 if (client.Volume != row.Volume || client.OffsetMs != row.OffsetMs)
                 {
                     var stale = row;
-                    Send(() => _host.SetDeviceSettingsAsync(id, stale.Volume, stale.OffsetMs), "re-sending a reconnected client's settings");
+                    Send(() => _host.SetDeviceSettingsAsync(id, stale.Volume, stale.OffsetMs, EqGains.Flat), "re-sending a reconnected client's settings");
                 }
                 continue;
             }
@@ -186,7 +187,7 @@ public sealed partial class HostViewModel : ObservableObject
             {
                 row.Adopt(stored.Volume, stored.OffsetMs);
                 var added = row;
-                Send(() => _host.SetDeviceSettingsAsync(id, added.Volume, added.OffsetMs), "restoring a client's settings");
+                Send(() => _host.SetDeviceSettingsAsync(id, added.Volume, added.OffsetMs, EqGains.Flat), "restoring a client's settings");
             }
             Clients.Add(row);
         }
@@ -207,7 +208,7 @@ public sealed partial class HostViewModel : ObservableObject
         Guid id = row.DeviceId;
         float volume = row.Volume;
         double offset = row.OffsetMs;
-        Send(() => _host.SetDeviceSettingsAsync(id, volume, offset), "sending a client's settings");
+        Send(() => _host.SetDeviceSettingsAsync(id, volume, offset, EqGains.Flat), "sending a client's settings");
         try { _saveSettings(id, new DeviceSettings(volume, offset)); }
         catch (Exception e) { Log.Warning(e, "Saving the settings of {Device} failed", id); }
     }

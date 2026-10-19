@@ -10,6 +10,7 @@ using RhythmSync.App.Tests.Ui;
 using RhythmSync.App.ViewModels;
 using RhythmSync.App.Views;
 using RhythmSync.Core.Clock;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Platform.Windows;
@@ -47,7 +48,7 @@ public class HostPagesSmokeTests
 
     private static ConnectedClient Client(int n, string name, SyncState state, double latePct = 0)
         => new(Id(n), name, new IPEndPoint(IPAddress.Loopback, 5000 + n), true,
-            new HeartbeatStats(0.1, latePct, 42, 0.18, 0.21, state), 0.8f, 10);
+            new HeartbeatStats(0.1, latePct, 42, 0.18, 0.21, state), 0.8f, 10, EqGains.Flat);
 
     private static HostViewModel NewHost(string sessionName = "Living Room", HostAudioStatus status = HostAudioStatus.Ok)
         => new(new ShellTests.FakeHost(), () => status, _ => null, (_, _) => { }, "4729", sessionName);

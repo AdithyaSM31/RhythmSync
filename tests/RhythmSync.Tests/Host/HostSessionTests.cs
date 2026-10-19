@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using RhythmSync.Core;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Tests.Sim;
@@ -386,13 +387,13 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         var (client, _) = await rig.JoinAsync(id);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10);
-        Assert.Equal(new SetDeviceSettings(0.5f, 10), await client.ReadAsync());
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, EqGains.Flat);
+        AssertSettings(0.5f, 10, EqGains.Flat, await client.ReadAsync());
         Assert.Equal(0.5f, rig.Host.Clients[0].Volume);
         Assert.Equal(10.0, rig.Host.Clients[0].OffsetMs);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 3f, -500);   // clamped to 0..1 and ±100 ms
-        Assert.Equal(new SetDeviceSettings(1f, -100), await client.ReadAsync());
+        await rig.Host.SetDeviceSettingsAsync(id, 3f, -500, EqGains.Flat);   // clamped to 0..1 and ±100 ms
+        AssertSettings(1f, -100, EqGains.Flat, await client.ReadAsync());
 
         await rig.Host.SetLatencyAsync(900);
         Assert.Equal(new SetLatency(500), await client.ReadAsync());
@@ -403,6 +404,42 @@ public class HostSessionTests
         Assert.Equal(new SetLatency(100), await client.ReadAsync());
         Assert.Equal(100, rig.Host.TargetLatencyMs);
         Assert.Equal(100, rig.Pipeline.Assembler.TargetLatencyMs);
+    }
+
+    private static void AssertSettings(float volume, double offsetMs, EqGains eq, ControlMessage? actual)
+    {
+        var s = Assert.IsType<SetDeviceSettings>(actual);
+        Assert.Equal(volume, s.Volume);
+        Assert.Equal(offsetMs, s.OffsetMs);
+        Assert.Equal(eq.ToArray(), s.EqGainsDb);
+    }
+
+    [Fact]
+    public async Task SetDeviceSettingsAsync_updates_ConnectedClient_Eq_and_sends_it()
+    {
+        await using var rig = await new Rig().StartAsync();
+        var id = Guid.NewGuid();
+        var (client, _) = await rig.JoinAsync(id);
+        var eq = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, eq);
+
+        AssertSettings(0.5f, 10, eq, await client.ReadAsync());
+        Assert.Equal(eq, rig.Host.Clients[0].Eq);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, null!));
+    }
+
+    [Fact]
+    public async Task A_new_connection_starts_flat()
+    {
+        await using var rig = await new Rig().StartAsync();
+        await rig.JoinAsync(Guid.NewGuid());
+
+        var c = Assert.Single(rig.Host.Clients);
+        Assert.Equal(EqGains.Flat, c.Eq);
+        Assert.Equal(1f, c.Volume);
+        Assert.Equal(0, c.OffsetMs);
     }
 
     [Fact]
@@ -427,7 +464,7 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         await rig.JoinAsync(id);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => rig.Host.SetDeviceSettingsAsync(id, volume, offset));
+        await Assert.ThrowsAsync<ArgumentException>(() => rig.Host.SetDeviceSettingsAsync(id, volume, offset, EqGains.Flat));
     }
 
     [Fact]

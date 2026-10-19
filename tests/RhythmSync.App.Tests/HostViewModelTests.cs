@@ -2,6 +2,7 @@ using System.Net;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Platform.Windows;
@@ -16,7 +17,7 @@ public class HostViewModelTests
     private sealed class FakeHost : IHostControl
     {
         public readonly List<int> Latencies = new();
-        public readonly List<(Guid Id, float Volume, double Offset)> Settings = new();
+        public readonly List<(Guid Id, float Volume, double Offset, EqGains Eq)> Settings = new();
         public Exception? Throw;
 
         public Task SetLatencyAsync(int ms)
@@ -25,9 +26,9 @@ public class HostViewModelTests
             return Throw is null ? Task.CompletedTask : Task.FromException(Throw);
         }
 
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
         {
-            Settings.Add((deviceId, volume, offsetMs));
+            Settings.Add((deviceId, volume, offsetMs, eq));
             if (Throw is not null) throw Throw;
             return Task.CompletedTask;
         }
@@ -50,8 +51,8 @@ public class HostViewModelTests
     }
 
     private static ConnectedClient Client(Guid id, string name = "Kitchen", bool ready = true, HeartbeatStats? stats = null,
-        float volume = 1f, double offset = 0)
-        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), ready, stats, volume, offset);
+        float volume = 1f, double offset = 0, EqGains? eq = null)
+        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), ready, stats, volume, offset, eq ?? EqGains.Flat);
 
     private static HeartbeatStats Stats(double late = 0, double loss = 0, double syncError = 0.3, double drift = 12,
         double fit = 0.05, SyncState state = SyncState.InSync)
@@ -334,7 +335,7 @@ public class HostViewModelTests
 
         rig.Vm.Clients[0].OffsetMs = 12.5;
 
-        Assert.Equal((IdA, 1f, 12.5), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 1f, 12.5, EqGains.Flat), Assert.Single(rig.Host.Settings));
     }
 
     [Fact]
@@ -346,7 +347,7 @@ public class HostViewModelTests
 
         rig.Vm.Clients[0].Volume = 0.4f;
 
-        Assert.Equal((IdA, 0.4f, -5.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.4f, -5.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
     }
 
     [Fact]
@@ -358,7 +359,7 @@ public class HostViewModelTests
         rig.Vm.UpdateClients(new[] { Client(IdA) });
         await Task.Yield();
 
-        Assert.Equal((IdA, 0.7f, -5.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.7f, -5.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
         Assert.Equal(0.7f, rig.Vm.Clients[0].Volume);
         Assert.Equal(-5, rig.Vm.Clients[0].OffsetMs);
         Assert.Empty(rig.Saved);   // restoring a stored value is not a user change
@@ -427,7 +428,7 @@ public class HostViewModelTests
         // The client reconnected: the host-side values are back at volume 1, offset 0.
         rig.Vm.UpdateClients(new[] { Client(IdA, ready: false) });
 
-        Assert.Equal((IdA, 0.25f, 40.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.25f, 40.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
         Assert.Equal(0.25f, rig.Vm.Clients[0].Volume);
         Assert.Equal(40, rig.Vm.Clients[0].OffsetMs);
         Assert.Empty(rig.Saved);

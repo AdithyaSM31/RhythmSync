@@ -1,3 +1,4 @@
+using RhythmSync.Core.Audio.Eq;
 using System.Net;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,6 +29,7 @@ public class JoinPageSmokeTests
         public event Action? StateChanged;
         public float Volume { get; set; } = 0.8f;
         public double OffsetMs { get; set; } = 10;
+        public EqGains Eq { get; set; } = EqGains.Flat;
         public PlaybackStats? Stats { get; set; }
         public long OutputFailures { get; set; }
 

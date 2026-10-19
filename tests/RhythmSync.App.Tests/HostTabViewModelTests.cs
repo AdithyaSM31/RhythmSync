@@ -1,5 +1,6 @@
 using RhythmSync.App.Services;
 using RhythmSync.App.ViewModels;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Platform.Windows;
 
@@ -236,6 +237,6 @@ public class HostTabViewModelTests
     private sealed class NoHost : RhythmSync.Core.Host.IHostControl
     {
         public Task SetLatencyAsync(int ms) => Task.CompletedTask;
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs) => Task.CompletedTask;
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq) => Task.CompletedTask;
     }
 }

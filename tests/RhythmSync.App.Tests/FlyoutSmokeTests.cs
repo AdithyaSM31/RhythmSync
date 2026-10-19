@@ -9,6 +9,7 @@ using RhythmSync.App.Flyout;
 using RhythmSync.App.Tests.Ui;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Clock;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Platform.Windows;
@@ -56,7 +57,7 @@ public sealed class FlyoutSmokeTests
 
     private static ConnectedClient Pc(int n, string name, SyncState state = SyncState.InSync)
         => new(Id(n), name, new IPEndPoint(IPAddress.Loopback, 5000 + n), true,
-            new HeartbeatStats(0.1, 0, 42, 0.18, 0.21, state), 0.8f, 10);
+            new HeartbeatStats(0.1, 0, 42, 0.18, 0.21, state), 0.8f, 10, EqGains.Flat);
 
     private sealed class Rig
     {

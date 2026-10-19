@@ -6,6 +6,7 @@ using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Net;
 using RhythmSync.Core.Protocol;
@@ -28,6 +29,7 @@ public class ShellTests
         public event Action? StateChanged;
         public float Volume => 1f;
         public double OffsetMs => 0;
+        public EqGains Eq => EqGains.Flat;
         public PlaybackStats? Stats => null;
         public long OutputFailures => 0;
         public int Leaves;
@@ -44,7 +46,7 @@ public class ShellTests
     internal sealed class FakeHost : IHostControl
     {
         public Task SetLatencyAsync(int ms) => Task.CompletedTask;
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs) => Task.CompletedTask;
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq) => Task.CompletedTask;
     }
 
     internal sealed class FakeRuntime : IHostRuntime
@@ -89,7 +91,7 @@ public class ShellTests
 
     private static ConnectedClient Row(Guid id, SyncState state)
         => new(id, $"PC {id.ToString()[^1]}", new IPEndPoint(IPAddress.Loopback, 5000), true,
-            new HeartbeatStats(0, 0, 12, 0.05, 0.3, state), 1f, 0);
+            new HeartbeatStats(0, 0, 12, 0.05, 0.3, state), 1f, 0, EqGains.Flat);
 
     private static async Task Join(ClientViewModel client, DiscoveredHost host)
     {

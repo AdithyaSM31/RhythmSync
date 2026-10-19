@@ -1,3 +1,4 @@
+using RhythmSync.Core.Audio.Eq;
 using System.Net;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Client;
@@ -18,6 +19,7 @@ public class ClientViewModelTests
         public event Action? StateChanged;
         public float Volume { get; set; } = 1f;
         public double OffsetMs { get; set; }
+        public EqGains Eq { get; set; } = EqGains.Flat;
         public PlaybackStats? Stats { get; set; }
         public long OutputFailures { get; set; }
         public int Leaves;

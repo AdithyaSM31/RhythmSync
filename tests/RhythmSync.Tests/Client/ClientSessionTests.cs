@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using RhythmSync.Core;
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
@@ -508,7 +509,7 @@ public class ClientSessionTests
         await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10);
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, EqGains.Flat);
 
         await TickUntil(() => client.Volume == 0.5f && client.OffsetMs == 10, client, TimeSpan.FromSeconds(1), () => rig);
         Assert.Equal(10, SchedulerOf(outputs.Last).EffectiveOffsetMs, 6);
@@ -524,7 +525,7 @@ public class ClientSessionTests
         await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80);
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80, EqGains.Flat);
         await TickUntil(() => client.OffsetMs == -80, client, TimeSpan.FromSeconds(1), () => rig);
         Assert.Equal(-50, SchedulerOf(outputs.Last).EffectiveOffsetMs, 6);   // ≥ −(100 − 50)
 
@@ -542,7 +543,7 @@ public class ClientSessionTests
         await using var client = NewClient(outputs, id: id);
         await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
         await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
-        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80);   // effective −50 at 100 ms latency
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, -80, EqGains.Flat);   // effective −50 at 100 ms latency
         await TickUntil(() => client.OffsetMs == -80, client, TimeSpan.FromSeconds(1), () => rig);
         var first = outputs.Last;
         Assert.Equal(48000, SchedulerOf(first).DeviceSampleRate);
@@ -688,6 +689,106 @@ public class ClientSessionTests
         await TickUntil(() => client.Volume == 1f && client.OffsetMs == -100 && client.IgnoredSettingsMessages == 2, client,
                         TimeSpan.FromSeconds(2));
         Assert.Equal(2, client.IgnoredSettingsMessages);
+    }
+
+    private static EqGains Laptop => EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+
+    [Fact]
+    public async Task A_valid_eq_reaches_the_pipeline()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var id = Guid.NewGuid();
+        await using var client = NewClient(new FakeOutputFactory(), id: id);
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => rig);
+        Assert.Equal(EqGains.Flat, client.Eq);
+
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, 0, Laptop);
+
+        await TickUntil(() => client.Eq == Laptop, client, TimeSpan.FromSeconds(1), () => rig);
+        Assert.Equal(Laptop, client.Pipeline!.Eq.Gains);
+    }
+
+    [Fact]
+    public async Task A_malformed_eq_is_ignored_and_counted_and_the_connection_stays()
+    {
+        using var listener = new FakeHost();
+        await using var client = NewClient(new FakeOutputFactory());
+        var join = client.JoinAsync(listener.Control, Code, CancellationToken.None);
+        await using var stream = await Within(listener.AcceptAsync());
+        Assert.Equal(new JoinResult(JoinOutcome.Joined), await Within(join));
+
+        await ControlCodec.WriteAsync(stream, new SetDeviceSettings(0.5f, 10, Laptop.ToArray()), CancellationToken.None);
+        await TickUntil(() => client.Eq == Laptop && client.Volume == 0.5f && client.OffsetMs == 10, client, TimeSpan.FromSeconds(2));
+
+        var nan = Laptop.ToArray();
+        nan[0] = float.NaN;
+        await ControlCodec.WriteAsync(stream, new SetDeviceSettings(0.9f, 50, new float[9]), CancellationToken.None);
+        await ControlCodec.WriteAsync(stream, new SetDeviceSettings(0.9f, 50, nan), CancellationToken.None);
+        await TickUntil(() => client.IgnoredSettingsMessages == 2, client, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(Laptop, client.Eq);
+        Assert.Equal(0.5f, client.Volume);
+        Assert.Equal(10, client.OffsetMs);
+
+        await ControlCodec.WriteAsync(stream, new SetDeviceSettings(0.25f, -20, null), CancellationToken.None);   // null means flat
+        await TickUntil(() => client.Eq == EqGains.Flat && client.Volume == 0.25f && client.OffsetMs == -20, client, TimeSpan.FromSeconds(2));
+        Assert.Equal(2, client.IgnoredSettingsMessages);
+    }
+
+    [Fact]
+    public async Task An_eq_received_before_playback_applies_when_the_pipeline_is_built()
+    {
+        await using var rig = await HostRig.StartAsync();
+        var id = Guid.NewGuid();
+        await using var client = NewClient(new FakeOutputFactory(), id: id);
+        await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+        Assert.Null(client.Pipeline);   // nothing ticks the client, so no output or pipeline exists yet
+
+        await rig.Host.SetDeviceSettingsAsync(id, 1f, 0, Laptop);
+        var sw = Stopwatch.StartNew();
+        while (client.Eq != Laptop)
+        {
+            if (sw.Elapsed > TimeSpan.FromSeconds(2)) throw new TimeoutException("The EQ did not arrive.");
+            await Task.Delay(10);
+        }
+        Assert.Null(client.Pipeline);
+
+        await TickUntil(() => client.Pipeline is not null, client, TimeSpan.FromSeconds(5), () => rig);
+
+        Assert.Equal(Laptop, client.Pipeline!.Eq.Gains);
+    }
+
+    [Fact]
+    public async Task The_eq_survives_a_reconnect()
+    {
+        var rig = await HostRig.StartAsync(sessionId: 0x1111);
+        int port = rig.Host.ControlPort;
+        var id = Guid.NewGuid();
+        await using var client = NewClient(new FakeOutputFactory(), id: id);
+        HostRig? current = rig;
+        try
+        {
+            await Within(client.JoinAsync(rig.Control, Code, CancellationToken.None));
+            await TickUntil(() => client.State == SyncState.InSync, client, TimeSpan.FromSeconds(5), () => current);
+            await rig.Host.SetDeviceSettingsAsync(id, 1f, 0, Laptop);
+            await TickUntil(() => client.Eq == Laptop, client, TimeSpan.FromSeconds(2), () => current);
+            var firstPipeline = client.Pipeline;
+
+            await rig.DisposeAsync();
+            current = null;
+            current = await HostRig.StartAsync(controlPort: port, sessionId: 0x2222);   // a fresh host that never sends the EQ again
+
+            await TickUntil(() => client.State == SyncState.InSync && current!.Host.Clients is [{ Ready: true }] && client.Pipeline is not null
+                                  && !ReferenceEquals(client.Pipeline, firstPipeline), client, Limit, () => current);
+
+            Assert.Equal(Laptop, client.Eq);
+            Assert.Equal(Laptop, client.Pipeline!.Eq.Gains);
+        }
+        finally
+        {
+            if (current is not null) await current.DisposeAsync();
+        }
     }
 
     [Fact]

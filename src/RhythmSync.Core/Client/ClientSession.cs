@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.ExceptionServices;
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Net;
@@ -140,6 +141,7 @@ public sealed class ClientSession : IAsyncDisposable
     private bool _disposed;
 
     private float _volume = 1f;
+    private EqGains _eq = EqGains.Flat;
     private double _requestedOffsetMs;
     private int _state = (int)SyncState.Disconnected;
     private long _ignoredSettings;
@@ -167,6 +169,21 @@ public sealed class ClientSession : IAsyncDisposable
     public float Volume
     {
         get { lock (_gate) return _volume; }
+    }
+
+    /// <summary>
+    /// The 10-band EQ as the host's SetDeviceSettings last set it; flat until the host sends one. Like the volume it is
+    /// session-level: it survives reconnects and is applied to every new pipeline.
+    /// </summary>
+    public EqGains Eq
+    {
+        get { lock (_gate) return _eq; }
+    }
+
+    /// <summary>The live pipeline, or null before the clock has converged (test seam).</summary>
+    internal ClientPipeline? Pipeline
+    {
+        get { lock (_gate) return _conn?.Pipeline; }
     }
 
     /// <summary>
@@ -402,6 +419,7 @@ public sealed class ClientSession : IAsyncDisposable
         }
 
         pipeline.Gain.Gain = _volume;
+        pipeline.Eq.SetGains(_eq);
         pipeline.Scheduler.ApplyLatency(_requestedOffsetMs, c.LatencyMs);
         c.Pipeline = pipeline;
         c.Window = new StatsWindow();
@@ -704,8 +722,9 @@ public sealed class ClientSession : IAsyncDisposable
                         }
                         break;
                     case SetDeviceSettings s:
-                        // The control JSON allows NaN/Infinity literals: refuse them rather than trust the host.
-                        if (!float.IsFinite(s.Volume) || !double.IsFinite(s.OffsetMs))
+                        // The control JSON allows NaN/Infinity literals and any array length: refuse them (the whole
+                        // message, so a bad EQ never half-applies) rather than trust the host.
+                        if (!float.IsFinite(s.Volume) || !double.IsFinite(s.OffsetMs) || !EqGains.TryCreate(s.EqGainsDb, out var eq))
                         {
                             Interlocked.Increment(ref _ignoredSettings);
                             break;
@@ -715,6 +734,7 @@ public sealed class ClientSession : IAsyncDisposable
                             if (_conn != c) break;
                             ApplyVolumeLocked(s.Volume);
                             ApplyOffsetLocked(s.OffsetMs);
+                            ApplyEqLocked(eq);
                         }
                         break;
                     // Heartbeat: liveness only. Anything else is ignored so newer hosts stay compatible.
@@ -740,6 +760,12 @@ public sealed class ClientSession : IAsyncDisposable
     {
         _volume = Math.Clamp(volume, 0f, 1f);
         if (_conn?.Pipeline is { } p) p.Gain.Gain = _volume;
+    }
+
+    private void ApplyEqLocked(EqGains eq)
+    {
+        _eq = eq;
+        if (_conn?.Pipeline is { } p) p.Eq.SetGains(_eq);
     }
 
     private void ApplyOffsetLocked(double offsetMs)

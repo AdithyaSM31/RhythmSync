@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core;
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
@@ -93,8 +94,8 @@ public sealed class HostRuntime : IHostRuntime
             return session.SetLatencyAsync(latency);
         }
 
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
-            => session.SetDeviceSettingsAsync(deviceId, volume, offsetMs);
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
+            => session.SetDeviceSettingsAsync(deviceId, volume, offsetMs, eq);
     }
 
     private readonly IHostEnvironment _env;

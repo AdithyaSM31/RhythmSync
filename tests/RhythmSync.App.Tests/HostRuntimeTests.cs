@@ -811,7 +811,10 @@ public sealed class HostRuntimeTests : IAsyncDisposable
 
         var message = await client.ReadAsync();
         while (message is not SetDeviceSettings) message = await client.ReadAsync();
-        Assert.Equal(new SetDeviceSettings(0.6f, -7), message);
+        var settings = Assert.IsType<SetDeviceSettings>(message);
+        Assert.Equal(0.6f, settings.Volume);
+        Assert.Equal(-7, settings.OffsetMs);
+        Assert.Equal(new float[10], settings.EqGainsDb);   // flat until the host UI sends an EQ
     }
 
     // ---- stopping ----------------------------------------------------------------------------------------------------
