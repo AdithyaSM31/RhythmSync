@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core;
 using RhythmSync.Core.Audio;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
@@ -93,8 +94,8 @@ public sealed class HostRuntime : IHostRuntime
             return session.SetLatencyAsync(latency);
         }
 
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
-            => session.SetDeviceSettingsAsync(deviceId, volume, offsetMs);
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
+            => session.SetDeviceSettingsAsync(deviceId, volume, offsetMs, eq);
     }
 
     private readonly IHostEnvironment _env;
@@ -109,6 +110,7 @@ public sealed class HostRuntime : IHostRuntime
 
     private Run? _run;
     private string? _lastError;
+    private EqGains _localEq = EqGains.Flat;   // UI thread; lives here, not on Run, so a host restart keeps it
 
     /// <param name="post">Runs an action on the UI thread.</param>
     /// <param name="beforeStart">Runs before hosting starts: releases the client session (host and client modes are exclusive).</param>
@@ -154,6 +156,9 @@ public sealed class HostRuntime : IHostRuntime
         {
             if (_run is not null) return;
             _lastError = null;
+            // This PC's saved EQ, before local playback can start. A restart of the run (StartCoreAsync) keeps whatever
+            // SetLocalEq set since, so the curve survives device-change restarts.
+            _localEq = EqGains.FromStored(_settings.Current.Devices.TryGetValue(_settings.Current.DeviceId, out var own) ? own.EqGainsDb : null);
             try { await _beforeStart().ConfigureAwait(true); }
             catch (Exception e) { Log.Warning(e, "Releasing the client session failed"); }
 
@@ -315,7 +320,9 @@ public sealed class HostRuntime : IHostRuntime
             audioStatus: () => EvaluateAudio(run),
             storedSettings: id => _settings.Current.Devices.TryGetValue(id, out var d) ? d : null,
             saveSettings: (id, d) => _settings.Update(s => s with { Devices = new Dictionary<Guid, DeviceSettings>(s.Devices) { [id] = d } }),
-            pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings);
+            pairingCode: run.PairingCode, sessionName: run.Name, latencyMs: run.LatencyMs, openSoundSettings: _openSoundSettings,
+            setLocalEq: SetLocalEq, localDeviceId: _settings.Current.DeviceId,
+            isPlayingLocally: () => run.Local is not null);
         vm.LatencyChanged += ms => _settings.Update(s => s with { TargetLatencyMs = ms });
         return vm;
     }
@@ -433,6 +440,21 @@ public sealed class HostRuntime : IHostRuntime
     }
 
     /// <summary>
+    /// UI thread: sets the EQ of this PC's own speakers. It is kept for local playback that starts later (a speaker change,
+    /// a rebuild, a host restart) and applied at once to the running local pipeline, if any. It is not saved here; the
+    /// view model saves it with this PC's other per-device settings.
+    /// </summary>
+    public void SetLocalEq(EqGains eq)
+    {
+        ArgumentNullException.ThrowIfNull(eq);
+        _localEq = eq;
+        Volatile.Read(ref _run)?.Local?.Eq.SetGains(eq);
+    }
+
+    /// <summary>Test hook: the EQ curve of the running local pipeline; null when nothing plays locally.</summary>
+    internal EqGains? LocalPipelineEq => Volatile.Read(ref _run)?.Local?.Eq.Gains;
+
+    /// <summary>
     /// Brings local playback in line with the audio status: running on the chosen speakers only while the status is
     /// <see cref="HostAudioStatus.Ok"/>, off otherwise (it would double up with the sound of this PC, or feed back into the
     /// capture). Failures are logged and retried; they never stop hosting.
@@ -454,6 +476,7 @@ public sealed class HostRuntime : IHostRuntime
             Volatile.Write(ref run.OutputDirty, 1);
             Volatile.Write(ref run.RetryAfterTicks, _clock.NowTicks + _options.RetryDelayTicks);
         }
+        run.Vm.RefreshLocalPlayback();   // the This PC chip follows whether local playback is running now
     }
 
     private void StartLocal(Run run, string speakerId)
@@ -462,6 +485,7 @@ public sealed class HostRuntime : IHostRuntime
         try
         {
             var local = new ClientPipeline(run.SessionId, new IdentityClockMapping(), output.SampleRate);
+            local.Eq.SetGainsImmediate(_localEq);   // the output has not started: the first audio is already on the curve
             local.Scheduler.ApplyLatency(0, run.LatencyMs);
             Action handler = () =>
             {

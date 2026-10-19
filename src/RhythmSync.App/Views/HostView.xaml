@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:RhythmSync.App.Controls"
-             xmlns:views="clr-namespace:RhythmSync.App.Views">
+             xmlns:views="clr-namespace:RhythmSync.App.Views"
+             xmlns:vm="clr-namespace:RhythmSync.App.ViewModels">
     <!-- The running host (spec 4.2), below the page header. DataContext: a HostViewModel. -->
     <ScrollViewer x:Name="HostScroll" VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="0,0,12,4">
@@ -63,6 +64,26 @@
                 <CheckBox Content="Show stats" IsChecked="{Binding ShowStats}" Style="{StaticResource ToggleSwitch}"
                           DockPanel.Dock="Right" VerticalAlignment="Center" />
             </DockPanel>
+
+            <!-- This PC (EQ spec 7.2): the host's own speakers, with an EQ and nothing else. Not a connected client, so it is
+                 not counted above. DataContext: the LocalSpeakerRowViewModel. -->
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10" DataContext="{Binding LocalSpeaker}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{x:Static vm:LocalSpeakerRowViewModel.NameText}" Style="{StaticResource SubtitleText}"
+                                   VerticalAlignment="Center" />
+                        <c:StatusChip Grid.Column="1" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Text="{Binding StatusText}" Kind="{Binding Kind}" />
+                    </Grid>
+                    <Expander Style="{StaticResource EqSection}" DataContext="{Binding Eq}" Margin="0,10,0,0">
+                        <views:EqEditor />
+                    </Expander>
+                </StackPanel>
+            </Border>
 
             <Border Style="{StaticResource CardBorder}" Visibility="{Binding HasNoClients, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Text="Waiting for PCs to join…" Style="{StaticResource CaptionText}" HorizontalAlignment="Center" />
@@ -126,6 +147,11 @@
                                         </StackPanel>
                                     </StackPanel>
                                 </Grid>
+
+                                <!-- Row 3: the EQ, collapsed until asked for. DataContext: the row's EqViewModel. -->
+                                <Expander Style="{StaticResource EqSection}" DataContext="{Binding Eq}" Margin="0,12,0,0">
+                                    <views:EqEditor />
+                                </Expander>
 
                                 <views:StatsPanel Visibility="{Binding DataContext.ShowStats, RelativeSource={RelativeSource AncestorType=views:HostView}, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>

@@ -138,6 +138,76 @@ public class ThemeTests
     }
 
     [Fact]
+    public void Eq_styles_resolve()
+    {
+        UiDispatcher.Run(() =>
+        {
+            Assert.Equal(typeof(Slider), Assert.IsType<Style>(Find("EqBandSlider")).TargetType);
+            Assert.Equal(typeof(Expander), Assert.IsType<Style>(Find("EqSection")).TargetType);
+
+            // Both render, bound to a real EQ view model, without a binding error.
+            using var recorder = new BindingErrorRecorder();
+            var eq = new RhythmSync.App.ViewModels.EqViewModel(RhythmSync.Core.Audio.Eq.EqGains.Flat) { IsExpanded = true };
+            var slider = new Slider { Style = (Style)Find("EqBandSlider"), DataContext = eq.Bands[0] };
+            slider.SetBinding(RangeBase.ValueProperty, new Binding("GainDb") { Mode = BindingMode.TwoWay });
+            var section = new Expander { Style = (Style)Find("EqSection"), DataContext = eq, Content = new TextBlock { Text = "body" } };
+            UiDispatcher.Render(new StackPanel { Children = { slider, section } });
+            Assert.Empty(recorder.Errors);
+            Assert.Equal("Equalizer", System.Windows.Automation.AutomationProperties.GetName(section));
+            Assert.Equal(Orientation.Vertical, slider.Orientation);
+            Assert.Equal(-12, slider.Minimum);
+            Assert.Equal(12, slider.Maximum);
+            Assert.Equal(0.5, slider.SmallChange);
+            Assert.Equal(3, slider.LargeChange);
+
+            // The expander header follows the view model, both ways.
+            Assert.True(section.IsExpanded);
+            section.IsExpanded = false;
+            Assert.False(eq.IsExpanded);
+        });
+    }
+
+    [Fact]
+    public void The_eq_section_header_changes_on_hover_and_press()
+    {
+        UiDispatcher.Run(() =>
+        {
+            var template = Assert.IsType<ControlTemplate>(((Style)Find("EqSectionHeaderToggle")).Setters
+                .OfType<Setter>().Single(s => s.Property == Control.TemplateProperty).Value);
+
+            foreach (var property in new[] { UIElement.IsMouseOverProperty, ButtonBase.IsPressedProperty })
+            {
+                var trigger = Assert.Single(template.Triggers.OfType<Trigger>(), t => t.Property == property);
+                Assert.Contains(trigger.Setters.OfType<Setter>(), s => s.TargetName == "Frame" && s.Property == Border.BackgroundProperty);
+                Assert.Contains(trigger.Setters.OfType<Setter>(), s => s.TargetName == "Chevron" && s.Property == TextBlock.ForegroundProperty);
+            }
+        });
+    }
+
+    [Fact]
+    public void The_eq_band_fill_runs_the_same_way_for_a_boost_and_a_cut()
+    {
+        UiDispatcher.Run(() =>
+        {
+            Color StopColour(double value, double offset)
+            {
+                var slider = new Slider { Style = (Style)Find("EqBandSlider"), Value = value };
+                UiDispatcher.Render(slider);
+                var fill = (Border)slider.Template.FindName("Fill", slider);
+                var brush = Assert.IsType<LinearGradientBrush>(fill.Background);
+                return brush.GradientStops.Single(s => s.Offset == offset).Color;
+            }
+
+            // The fill bar's top is the thumb for a boost and the 0 dB line for a cut, so the stops swap to keep
+            // the thumb end violet and the 0 dB end teal in both.
+            Assert.Equal(ColourOf("Accent"), StopColour(6, 0));
+            Assert.Equal(ColourOf("Teal"), StopColour(6, 1));
+            Assert.Equal(ColourOf("Teal"), StopColour(-6, 0));
+            Assert.Equal(ColourOf("Accent"), StopColour(-6, 1));
+        });
+    }
+
+    [Fact]
     public void Styled_controls_render_without_binding_errors()
     {
         UiDispatcher.Run(() =>

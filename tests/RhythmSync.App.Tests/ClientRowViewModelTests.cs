@@ -1,3 +1,4 @@
+using RhythmSync.Core.Audio.Eq;
 using System.Net;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Clock;
@@ -17,7 +18,7 @@ public class ClientRowViewModelTests
 
         public Rig(double offset = 0)
         {
-            var client = new ConnectedClient(Id, "Kitchen", new IPEndPoint(IPAddress.Loopback, 5000), true, null, 1f, offset);
+            var client = new ConnectedClient(Id, "Kitchen", new IPEndPoint(IPAddress.Loopback, 5000), true, null, 1f, offset, EqGains.Flat);
             Row = new ClientRowViewModel(client, r => Reported.Add((r.Volume, r.OffsetMs)));
             Reported.Clear();
         }
@@ -210,7 +211,7 @@ public class ClientRowViewModelTests
         rig.Row.IncreaseOffsetCommand.Execute(null);  // 7.5 rounds to 8, +1
         Assert.Equal("9", rig.Row.OffsetInput);
 
-        rig.Row.Adopt(0.5f, -42);                     // the host / settings store
+        rig.Row.Adopt(0.5f, -42, EqGains.Flat);                     // the host / settings store
         Assert.Equal("-42", rig.Row.OffsetInput);
         Assert.Equal("Offset: -42 ms", rig.Row.OffsetText);
 
@@ -235,7 +236,7 @@ public class ClientRowViewModelTests
         var rig = new Rig(offset: 5);
         rig.Row.OffsetInput = "1";
 
-        rig.Row.Adopt(1f, 5);   // e.g. the next heartbeat's snapshot: same value
+        rig.Row.Adopt(1f, 5, EqGains.Flat);   // e.g. the next heartbeat's snapshot: same value
 
         Assert.Equal("1", rig.Row.OffsetInput);
     }

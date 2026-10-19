@@ -28,7 +28,11 @@ public sealed record HeartbeatStats(double LossPct, double LatePct, double Drift
 
 public sealed record Heartbeat(HeartbeatStats? Stats) : ControlMessage;
 
-public sealed record SetDeviceSettings(float Volume, double OffsetMs) : ControlMessage;
+/// <summary>
+/// The host's settings for this client. <paramref name="EqGainsDb"/> is the 10-band EQ (null means flat); it is a plain
+/// array so any body deserialises and a bad one cannot drop the connection. The client validates it.
+/// </summary>
+public sealed record SetDeviceSettings(float Volume, double OffsetMs, float[]? EqGainsDb = null) : ControlMessage;
 
 public sealed record SetLatency(int TargetLatencyMs) : ControlMessage;
 

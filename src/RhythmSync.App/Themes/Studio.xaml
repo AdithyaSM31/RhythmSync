@@ -10,6 +10,7 @@
         <ResourceDictionary Source="FocusVisual.xaml" />
         <ResourceDictionary Source="Buttons.xaml" />
         <ResourceDictionary Source="Slider.xaml" />
+        <ResourceDictionary Source="Expander.xaml" />
         <ResourceDictionary Source="ToggleSwitch.xaml" />
         <ResourceDictionary Source="TextBox.xaml" />
         <ResourceDictionary Source="ComboBox.xaml" />

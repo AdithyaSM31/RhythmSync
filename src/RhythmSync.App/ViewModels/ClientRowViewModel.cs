@@ -1,15 +1,16 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
 
 namespace RhythmSync.App.ViewModels;
 
 /// <summary>
-/// One connected client as the host sees it: name, sync state, the statistics from its heartbeats, and the volume and
-/// offset the host can set for it. Created and updated by <see cref="HostViewModel"/> on the UI thread. A value change
-/// made by the user (not one adopted from the host) is reported through the callback given at construction.
+/// One connected client as the host sees it: name, sync state, the statistics from its heartbeats, and the volume,
+/// offset and EQ the host can set for it. Created and updated by <see cref="HostViewModel"/> on the UI thread. A value
+/// change made by the user (not one adopted from the host) is reported through the callback given at construction.
 /// </summary>
 public sealed partial class ClientRowViewModel : ObservableObject
 {
@@ -31,11 +32,16 @@ public sealed partial class ClientRowViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(client);
         _userChanged = userChanged ?? throw new ArgumentNullException(nameof(userChanged));
         DeviceId = client.DeviceId;
+        Eq = new EqViewModel(client.Eq);
+        Eq.Changed += () => _userChanged(this);
         Apply(client);
-        Adopt(client.Volume, client.OffsetMs);
+        Adopt(client.Volume, client.OffsetMs, client.Eq);
     }
 
     public Guid DeviceId { get; }
+
+    /// <summary>This client's EQ. A user change is reported like a volume or offset change.</summary>
+    public EqViewModel Eq { get; }
 
     [ObservableProperty]
     private string _name = "";
@@ -205,14 +211,15 @@ public sealed partial class ClientRowViewModel : ObservableObject
         }
     }
 
-    /// <summary>Sets volume and offset without reporting them as a user change (values the host or the settings store supplied).</summary>
-    internal void Adopt(float volume, double offsetMs)
+    /// <summary>Sets volume, offset and EQ without reporting them as a user change (values the host or the settings store supplied).</summary>
+    internal void Adopt(float volume, double offsetMs, EqGains eq)
     {
         _adopting = true;
         try
         {
             Volume = volume;
             OffsetMs = offsetMs;
+            Eq.Adopt(eq);
         }
         finally
         {

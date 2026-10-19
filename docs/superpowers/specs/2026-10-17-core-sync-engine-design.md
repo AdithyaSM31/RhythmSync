@@ -276,7 +276,7 @@ clicks; unplug headphones on a client; toggle host Wi-Fi off for 5 s.
 
 ## 9. Extension points for later sub-projects
 
-- **EQ (2):** add an `IAudioProcessor` to `DspChain`; settings carried by `SetDeviceSettings`.
+- **EQ (2):** add an `IAudioProcessor` to `DspChain`; settings carried by `SetDeviceSettings`. Built: see the [EQ design](2026-10-18-eq-design.md).
 - **Calibration (3):** writes per-device `offsetMs` (and gain); needs a "play test signal" control message.
 - **Spatial (4):** adds a channel-routing stage before `DspChain` and room positions in host settings;
   uses offset + gain per device.

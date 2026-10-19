@@ -1,3 +1,4 @@
+using RhythmSync.Core.Audio.Eq;
 using System.Net;
 using System.Windows;
 using System.Windows.Controls;
@@ -28,6 +29,7 @@ public class JoinPageSmokeTests
         public event Action? StateChanged;
         public float Volume { get; set; } = 0.8f;
         public double OffsetMs { get; set; } = 10;
+        public EqGains Eq { get; set; } = EqGains.Flat;
         public PlaybackStats? Stats { get; set; }
         public long OutputFailures { get; set; }
 
@@ -300,6 +302,30 @@ public class JoinPageSmokeTests
             UiDispatcher.Render(page.View, 960, 640);
             Assert.Equal(BrushColor("WarningBrush"), ((SolidColorBrush)Text(page.View, ClientViewModel.AudioDeviceText).Foreground).Color);
             Assert.Equal(StatusKind.Syncing, Assert.Single(Descendants<StatusChip>(page.View), c => Shown(c)).Kind);
+            Assert.Empty(recorder.Errors);
+        });
+    }
+
+    [Fact]
+    public void Joined_page_shows_the_eq_text()
+    {
+        UiDispatcher.Run(() =>
+        {
+            using var recorder = new BindingErrorRecorder();
+            var control = new FakeControl { Eq = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains };
+            var page = NewPage([Living, Office], control);
+            Join(page, control, Living, SyncState.InSync);
+            UiDispatcher.Render(page.View, 960, 640);
+
+            Text(page.View, "EQ: Laptop speakers");
+            Assert.True(HasText(page.View, ClientViewModel.SetOnHostText));
+            Assert.Empty(Descendants<Slider>(page.View));   // the client only reads the host's settings
+
+            control.Eq = EqGains.Flat;
+            control.Raise();
+            page.Vm.Refresh();
+            UiDispatcher.Render(page.View, 960, 640);
+            Text(page.View, "EQ: Flat");
             Assert.Empty(recorder.Errors);
         });
     }

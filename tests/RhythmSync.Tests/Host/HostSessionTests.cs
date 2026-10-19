@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using RhythmSync.Core;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Tests.Sim;
@@ -113,7 +114,7 @@ public class HostSessionTests
         }
 
         /// <summary>Connects and sends a Hello; returns the client and the host's first reply.</summary>
-        public async Task<(TestClient Client, ControlMessage? Reply)> JoinAsync(Guid id, string code = "1234", int version = 1,
+        public async Task<(TestClient Client, ControlMessage? Reply)> JoinAsync(Guid id, string code = "1234", int version = HostSession.ProtocolVersion,
                                                                                  int audioPort = 5000, string name = "Laptop")
         {
             var c = await ConnectAsync();
@@ -236,7 +237,7 @@ public class HostSessionTests
         for (int i = 0; i < 4; i++)
         {
             var bad = await rig.ConnectAsync();
-            await bad.SendAsync(new Hello(Guid.NewGuid(), "", "1234", 1, 5000));   // invalid: counts as a bad code
+            await bad.SendAsync(new Hello(Guid.NewGuid(), "", "1234", HostSession.ProtocolVersion, 5000));   // invalid: counts as a bad code
             Assert.Null(await ReadUntilClosed(bad));
         }
         for (int i = 0; i < 6; i++)
@@ -279,11 +280,11 @@ public class HostSessionTests
     }
 
     [Fact]
-    public async Task Version_mismatch_rejected()
+    public async Task A_protocol_1_hello_is_rejected_with_VersionMismatch()
     {
         await using var rig = await new Rig().StartAsync();
 
-        var (_, reply) = await rig.JoinAsync(Guid.NewGuid(), version: 2);
+        var (_, reply) = await rig.JoinAsync(Guid.NewGuid(), version: 1);
 
         Assert.Equal(new Reject(RejectReason.VersionMismatch), reply);
         Assert.Empty(rig.Host.Clients);
@@ -386,13 +387,13 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         var (client, _) = await rig.JoinAsync(id);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10);
-        Assert.Equal(new SetDeviceSettings(0.5f, 10), await client.ReadAsync());
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, EqGains.Flat);
+        AssertSettings(0.5f, 10, EqGains.Flat, await client.ReadAsync());
         Assert.Equal(0.5f, rig.Host.Clients[0].Volume);
         Assert.Equal(10.0, rig.Host.Clients[0].OffsetMs);
 
-        await rig.Host.SetDeviceSettingsAsync(id, 3f, -500);   // clamped to 0..1 and ±100 ms
-        Assert.Equal(new SetDeviceSettings(1f, -100), await client.ReadAsync());
+        await rig.Host.SetDeviceSettingsAsync(id, 3f, -500, EqGains.Flat);   // clamped to 0..1 and ±100 ms
+        AssertSettings(1f, -100, EqGains.Flat, await client.ReadAsync());
 
         await rig.Host.SetLatencyAsync(900);
         Assert.Equal(new SetLatency(500), await client.ReadAsync());
@@ -403,6 +404,42 @@ public class HostSessionTests
         Assert.Equal(new SetLatency(100), await client.ReadAsync());
         Assert.Equal(100, rig.Host.TargetLatencyMs);
         Assert.Equal(100, rig.Pipeline.Assembler.TargetLatencyMs);
+    }
+
+    private static void AssertSettings(float volume, double offsetMs, EqGains eq, ControlMessage? actual)
+    {
+        var s = Assert.IsType<SetDeviceSettings>(actual);
+        Assert.Equal(volume, s.Volume);
+        Assert.Equal(offsetMs, s.OffsetMs);
+        Assert.Equal(eq.ToArray(), s.EqGainsDb);
+    }
+
+    [Fact]
+    public async Task SetDeviceSettingsAsync_updates_ConnectedClient_Eq_and_sends_it()
+    {
+        await using var rig = await new Rig().StartAsync();
+        var id = Guid.NewGuid();
+        var (client, _) = await rig.JoinAsync(id);
+        var eq = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+
+        await rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, eq);
+
+        AssertSettings(0.5f, 10, eq, await client.ReadAsync());
+        Assert.Equal(eq, rig.Host.Clients[0].Eq);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => rig.Host.SetDeviceSettingsAsync(id, 0.5f, 10, null!));
+    }
+
+    [Fact]
+    public async Task A_new_connection_starts_flat()
+    {
+        await using var rig = await new Rig().StartAsync();
+        await rig.JoinAsync(Guid.NewGuid());
+
+        var c = Assert.Single(rig.Host.Clients);
+        Assert.Equal(EqGains.Flat, c.Eq);
+        Assert.Equal(1f, c.Volume);
+        Assert.Equal(0, c.OffsetMs);
     }
 
     [Fact]
@@ -427,7 +464,7 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         await rig.JoinAsync(id);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => rig.Host.SetDeviceSettingsAsync(id, volume, offset));
+        await Assert.ThrowsAsync<ArgumentException>(() => rig.Host.SetDeviceSettingsAsync(id, volume, offset, EqGains.Flat));
     }
 
     [Fact]
@@ -495,12 +532,12 @@ public class HostSessionTests
         var id = Guid.NewGuid();
         Hello hello = kind switch
         {
-            "noid" => new Hello(Guid.Empty, "Laptop", "1234", 1, 5000),
-            "nocode" => new Hello(id, "Laptop", null!, 1, 5000),
-            "noname" => new Hello(id, null!, "1234", 1, 5000),
-            "blankname" => new Hello(id, "   ", "1234", 1, 5000),
-            "noport" => new Hello(id, "Laptop", "1234", 1, 0),
-            _ => new Hello(id, "Laptop", "1234", 1, 70000),
+            "noid" => new Hello(Guid.Empty, "Laptop", "1234", HostSession.ProtocolVersion, 5000),
+            "nocode" => new Hello(id, "Laptop", null!, HostSession.ProtocolVersion, 5000),
+            "noname" => new Hello(id, null!, "1234", HostSession.ProtocolVersion, 5000),
+            "blankname" => new Hello(id, "   ", "1234", HostSession.ProtocolVersion, 5000),
+            "noport" => new Hello(id, "Laptop", "1234", HostSession.ProtocolVersion, 0),
+            _ => new Hello(id, "Laptop", "1234", HostSession.ProtocolVersion, 70000),
         };
         var bad = await rig.ConnectAsync();
 
@@ -539,7 +576,7 @@ public class HostSessionTests
         for (int i = 0; i < 3; i++)
         {
             var bad = await rig.ConnectAsync();
-            await bad.SendAsync(new Hello(id, "", "1234", 1, 5000));
+            await bad.SendAsync(new Hello(id, "", "1234", HostSession.ProtocolVersion, 5000));
             Assert.Null(await ReadUntilClosed(bad));
         }
 

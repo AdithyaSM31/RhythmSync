@@ -1,5 +1,6 @@
 using System.Net;
 using RhythmSync.App.ViewModels;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using Serilog;
@@ -39,6 +40,8 @@ public sealed class ClientSessionHolder : IClientSessionControl, IAsyncDisposabl
     public float Volume => Volatile.Read(ref _session)?.Volume ?? 1f;
 
     public double OffsetMs => Volatile.Read(ref _session)?.OffsetMs ?? 0;
+
+    public EqGains Eq => Volatile.Read(ref _session)?.Eq ?? EqGains.Flat;
 
     public PlaybackStats? Stats => Volatile.Read(ref _session)?.Stats;
 

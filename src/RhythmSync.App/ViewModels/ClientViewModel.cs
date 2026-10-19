@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Net;
@@ -41,6 +42,7 @@ public sealed partial class ClientViewModel : ObservableObject
     private long _outputFailures;
     private long _failureBaseline;
     private PlaybackStats? _stats;
+    private string _eqText = "EQ: " + EqPresets.NameOf(EqGains.Flat);
 
     public ClientViewModel(Func<IReadOnlyList<DiscoveredHost>> hosts, Func<IPEndPoint, string, Task<JoinResult>> join,
         IClientSessionControl? control = null, Action<Action>? post = null)
@@ -57,6 +59,7 @@ public sealed partial class ClientViewModel : ObservableObject
             _state = control.State;
             _outputFailures = _failureBaseline = control.OutputFailures;
             ShowHostSettings(control.Volume, control.OffsetMs);
+            ShowHostEq(control.Eq);
             control.StateChanged += OnSessionStateChanged;
         }
     }
@@ -229,6 +232,7 @@ public sealed partial class ClientViewModel : ObservableObject
         if (State == SyncState.InSync) _failureBaseline = _outputFailures;
 
         ShowHostSettings(_control.Volume, _control.OffsetMs);
+        ShowHostEq(_control.Eq);
 
         OnPropertyChanged(nameof(SyncErrorText));
         OnPropertyChanged(nameof(DriftText));
@@ -267,6 +271,12 @@ public sealed partial class ClientViewModel : ObservableObject
             return $"Offset: {(ms > 0 ? "+" : "")}{ms} ms";
         }
     }
+
+    /// <summary>This PC's EQ as the host set it, e.g. "EQ: Bass boost" or "EQ: Custom". Read-only, like the volume.</summary>
+    public string EqText => _eqText;
+
+    private void ShowHostEq(EqGains eq)
+        => SetProperty(ref _eqText, "EQ: " + (EqPresets.NameOf(eq) ?? EqPresets.CustomName), nameof(EqText));
 
     /// <summary>Shows the host's values; non-finite ones are ignored and the rest clamped to the slider ranges.</summary>
     private void ShowHostSettings(float volume, double offsetMs)

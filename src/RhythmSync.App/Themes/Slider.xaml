@@ -1,10 +1,11 @@
 <!--
     Slider (spec §2.2), implicit: a 4 px Track with the accent gradient filled up to the thumb, and a 16 px white
     thumb that shows a 4 px Accent ring (25 % alpha) on hover and on keyboard focus. Horizontal sliders only;
-    tick marks are not drawn.
+    tick marks are not drawn. EqBandSlider (EQ spec §7.2) is the vertical, bipolar variant for the equaliser bands.
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:c="clr-namespace:RhythmSync.App.Controls">
     <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="Tokens.xaml" />
         <ResourceDictionary Source="FocusVisual.xaml" />
@@ -102,6 +103,99 @@
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderFillButton}" Command="{x:Static Slider.DecreaseLarge}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderRestButton}" Command="{x:Static Slider.IncreaseLarge}" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SliderThumb}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Root" Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <c:BipolarFillConverter x:Key="BipolarFillConverter" />
+    <c:BipolarCutConverter x:Key="BipolarCutConverter" />
+
+    <!--
+        EqBandSlider: a vertical -12..+12 dB slider for one EQ band. A 4 px track, an accent fill from the 0 dB midpoint to
+        the thumb (up for a boost, down for a cut, none at 0), and the same 16 px thumb as the implicit Slider. The fill is
+        a bar stretched over the slider whose margin BipolarFillConverter computes (parameter: the 16 px thumb). The
+        gradient runs along the bar, so it is vertical here (the shared AccentGradientBrush runs left to right).
+    -->
+    <Style x:Key="EqBandSlider" TargetType="Slider">
+        <Setter Property="Orientation" Value="Vertical" />
+        <Setter Property="Minimum" Value="-12" />
+        <Setter Property="Maximum" Value="12" />
+        <Setter Property="SmallChange" Value="0.5" />
+        <Setter Property="LargeChange" Value="3" />
+        <Setter Property="IsSnapToTickEnabled" Value="True" />
+        <Setter Property="TickFrequency" Value="0.5" />
+        <Setter Property="TickPlacement" Value="None" />
+        <Setter Property="Height" Value="120" />
+        <Setter Property="Width" Value="24" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource StudioFocusVisual}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid x:Name="Root" Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                        <Border Width="4" CornerRadius="2" HorizontalAlignment="Center" Margin="0,8" Background="{StaticResource TrackBrush}" />
+                        <Border x:Name="Fill" Width="4" CornerRadius="2" HorizontalAlignment="Center" VerticalAlignment="Stretch">
+                            <Border.Margin>
+                                <MultiBinding Converter="{StaticResource BipolarFillConverter}" ConverterParameter="16">
+                                    <Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}" />
+                                    <Binding Path="Minimum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                    <Binding Path="Maximum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                    <Binding Path="ActualHeight" RelativeSource="{RelativeSource TemplatedParent}" />
+                                </MultiBinding>
+                            </Border.Margin>
+                            <!-- The 0 dB end is teal and the thumb end is violet for a boost and a cut alike (spec §7.2):
+                                 the bar for a cut is below the middle, so its gradient runs the other way. -->
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background">
+                                        <Setter.Value>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{StaticResource AccentColor}" Offset="0" />
+                                                <GradientStop Color="{StaticResource TealColor}" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Value="True">
+                                            <DataTrigger.Binding>
+                                                <MultiBinding Converter="{StaticResource BipolarCutConverter}">
+                                                    <Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                    <Binding Path="Minimum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                    <Binding Path="Maximum" RelativeSource="{RelativeSource TemplatedParent}" />
+                                                </MultiBinding>
+                                            </DataTrigger.Binding>
+                                            <Setter Property="Background">
+                                                <Setter.Value>
+                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                        <GradientStop Color="{StaticResource TealColor}" Offset="0" />
+                                                        <GradientStop Color="{StaticResource AccentColor}" Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderRestButton}" Command="{x:Static Slider.DecreaseLarge}" />
                             </Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderRestButton}" Command="{x:Static Slider.IncreaseLarge}" />

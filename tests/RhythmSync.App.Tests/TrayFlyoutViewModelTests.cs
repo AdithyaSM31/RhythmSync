@@ -5,6 +5,7 @@ using RhythmSync.App.Services;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Platform.Windows;
@@ -19,13 +20,13 @@ public class TrayFlyoutViewModelTests
 
     internal sealed class RecordingHost : IHostControl
     {
-        public readonly List<(Guid Id, float Volume, double Offset)> Settings = new();
+        public readonly List<(Guid Id, float Volume, double Offset, EqGains Eq)> Settings = new();
 
         public Task SetLatencyAsync(int ms) => Task.CompletedTask;
 
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
         {
-            Settings.Add((deviceId, volume, offsetMs));
+            Settings.Add((deviceId, volume, offsetMs, eq));
             return Task.CompletedTask;
         }
     }
@@ -100,7 +101,7 @@ public class TrayFlyoutViewModelTests
     }
 
     private static ConnectedClient Pc(Guid id, string name, SyncState state = SyncState.InSync)
-        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), true, new HeartbeatStats(0, 0, 12, 0.05, 0.21, state), 0.8f, 10);
+        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), true, new HeartbeatStats(0, 0, 12, 0.05, 0.21, state), 0.8f, 10, EqGains.Flat);
 
     [Fact]
     public void Copy_is_exact()
@@ -233,7 +234,7 @@ public class TrayFlyoutViewModelTests
 
         rig.Vm.Clients[0].Volume = 0.5f;
 
-        Assert.Equal((IdA, 0.5f, 10d), Assert.Single(rig.HostControl.Settings));
+        Assert.Equal((IdA, 0.5f, 10d, EqGains.Flat), Assert.Single(rig.HostControl.Settings));
         Assert.Equal(new DeviceSettings(0.5f, 10), Assert.Single(rig.Saved).Settings);
 
         rig.Vm.Clients[0].Volume = float.NaN;
@@ -242,6 +243,22 @@ public class TrayFlyoutViewModelTests
 
         rig.Vm.Clients[0].Volume = 3f;
         Assert.Equal(1f, rig.Vm.Clients[0].Volume);
+    }
+
+    [Fact]
+    public void Flyout_volume_keeps_the_row_eq()
+    {
+        var rig = new Rig();
+        var laptop = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+        var host = rig.StartHosting("Living Room", Pc(IdA, "Kitchen Laptop"));
+        host.Clients[0].Eq.SelectedPreset = "Laptop speakers";
+        rig.HostControl.Settings.Clear();
+        rig.Saved.Clear();
+
+        rig.Vm.Clients[0].Volume = 0.5f;
+
+        Assert.Equal((IdA, 0.5f, 10d, laptop), Assert.Single(rig.HostControl.Settings));
+        Assert.Equal(laptop.ToArray(), Assert.Single(rig.Saved).Settings.EqGainsDb);
     }
 
     [Fact]

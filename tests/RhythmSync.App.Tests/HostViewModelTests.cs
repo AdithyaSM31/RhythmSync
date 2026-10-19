@@ -2,6 +2,7 @@ using System.Net;
 using RhythmSync.App.ViewModels;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Config;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Host;
 using RhythmSync.Core.Protocol;
 using RhythmSync.Platform.Windows;
@@ -16,7 +17,7 @@ public class HostViewModelTests
     private sealed class FakeHost : IHostControl
     {
         public readonly List<int> Latencies = new();
-        public readonly List<(Guid Id, float Volume, double Offset)> Settings = new();
+        public readonly List<(Guid Id, float Volume, double Offset, EqGains Eq)> Settings = new();
         public Exception? Throw;
 
         public Task SetLatencyAsync(int ms)
@@ -25,9 +26,9 @@ public class HostViewModelTests
             return Throw is null ? Task.CompletedTask : Task.FromException(Throw);
         }
 
-        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs)
+        public Task SetDeviceSettingsAsync(Guid deviceId, float volume, double offsetMs, EqGains eq)
         {
-            Settings.Add((deviceId, volume, offsetMs));
+            Settings.Add((deviceId, volume, offsetMs, eq));
             if (Throw is not null) throw Throw;
             return Task.CompletedTask;
         }
@@ -40,18 +41,22 @@ public class HostViewModelTests
         public readonly Dictionary<Guid, DeviceSettings> Stored = new();
         public readonly List<(Guid Id, DeviceSettings Settings)> Saved = new();
         public int SoundSettingsOpened;
+        public readonly List<EqGains> LocalEqs = new();
         public HostViewModel Vm = null!;
 
-        public Rig(string code = "4729", string name = "Living room", int latency = 200)
+        public Rig(string code = "4729", string name = "Living room", int latency = 200, Guid localDeviceId = default,
+            bool withSetLocalEq = true, Action<Dictionary<Guid, DeviceSettings>>? seedStored = null)
         {
+            seedStored?.Invoke(Stored);
             Vm = new HostViewModel(Host, () => Status, id => Stored.TryGetValue(id, out var s) ? s : null,
-                (id, s) => Saved.Add((id, s)), code, name, latency, () => SoundSettingsOpened++);
+                (id, s) => Saved.Add((id, s)), code, name, latency, () => SoundSettingsOpened++,
+                withSetLocalEq ? LocalEqs.Add : null, localDeviceId);
         }
     }
 
     private static ConnectedClient Client(Guid id, string name = "Kitchen", bool ready = true, HeartbeatStats? stats = null,
-        float volume = 1f, double offset = 0)
-        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), ready, stats, volume, offset);
+        float volume = 1f, double offset = 0, EqGains? eq = null)
+        => new(id, name, new IPEndPoint(IPAddress.Loopback, 5000), ready, stats, volume, offset, eq ?? EqGains.Flat);
 
     private static HeartbeatStats Stats(double late = 0, double loss = 0, double syncError = 0.3, double drift = 12,
         double fit = 0.05, SyncState state = SyncState.InSync)
@@ -334,7 +339,7 @@ public class HostViewModelTests
 
         rig.Vm.Clients[0].OffsetMs = 12.5;
 
-        Assert.Equal((IdA, 1f, 12.5), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 1f, 12.5, EqGains.Flat), Assert.Single(rig.Host.Settings));
     }
 
     [Fact]
@@ -346,7 +351,7 @@ public class HostViewModelTests
 
         rig.Vm.Clients[0].Volume = 0.4f;
 
-        Assert.Equal((IdA, 0.4f, -5.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.4f, -5.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
     }
 
     [Fact]
@@ -358,7 +363,7 @@ public class HostViewModelTests
         rig.Vm.UpdateClients(new[] { Client(IdA) });
         await Task.Yield();
 
-        Assert.Equal((IdA, 0.7f, -5.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.7f, -5.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
         Assert.Equal(0.7f, rig.Vm.Clients[0].Volume);
         Assert.Equal(-5, rig.Vm.Clients[0].OffsetMs);
         Assert.Empty(rig.Saved);   // restoring a stored value is not a user change
@@ -427,7 +432,7 @@ public class HostViewModelTests
         // The client reconnected: the host-side values are back at volume 1, offset 0.
         rig.Vm.UpdateClients(new[] { Client(IdA, ready: false) });
 
-        Assert.Equal((IdA, 0.25f, 40.0), Assert.Single(rig.Host.Settings));
+        Assert.Equal((IdA, 0.25f, 40.0, EqGains.Flat), Assert.Single(rig.Host.Settings));
         Assert.Equal(0.25f, rig.Vm.Clients[0].Volume);
         Assert.Equal(40, rig.Vm.Clients[0].OffsetMs);
         Assert.Empty(rig.Saved);
@@ -521,5 +526,270 @@ public class HostViewModelTests
         var rig = new Rig();
         rig.Vm.UpdateClients(new[] { Client(IdA, stats: Stats(state: state)) });
         Assert.Equal(text, rig.Vm.Clients[0].StatusText);
+    }
+
+    // ---- EQ ----------------------------------------------------------------------------------------------------------
+
+    private static readonly EqGains Laptop = EqPresets.All.First(p => p.Name == "Laptop speakers").Gains;
+    private static readonly EqGains Bass = EqPresets.All.First(p => p.Name == "Bass boost").Gains;
+    private static readonly Guid LocalId = Guid.Parse("00000000-0000-0000-0000-0000000000cc");
+
+    [Fact]
+    public void A_reconnected_client_with_a_different_eq_gets_a_resend()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(1f, 0, Laptop.ToArray());
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        rig.Host.Settings.Clear();
+        rig.Saved.Clear();
+
+        // Same volume and offset, but the new connection starts with a flat EQ.
+        rig.Vm.UpdateClients(new[] { Client(IdA, ready: false, eq: EqGains.Flat) });
+
+        Assert.Equal((IdA, 1f, 0.0, Laptop), Assert.Single(rig.Host.Settings));
+        Assert.Equal(Laptop, rig.Vm.Clients[0].Eq.Gains);
+        Assert.Empty(rig.Saved);
+
+        // Once the host reports the same EQ nothing more is sent.
+        rig.Vm.UpdateClients(new[] { Client(IdA, eq: Laptop) });
+        Assert.Single(rig.Host.Settings);
+    }
+
+    [Fact]
+    public void A_new_row_adopts_and_sends_its_stored_eq()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(0.7f, -5, Bass.ToArray());
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+
+        Assert.Equal(Bass, rig.Vm.Clients[0].Eq.Gains);
+        Assert.Equal((IdA, 0.7f, -5.0, Bass), Assert.Single(rig.Host.Settings));
+        Assert.Empty(rig.Saved);
+    }
+
+    [Fact]
+    public void A_new_row_without_stored_settings_shows_the_hosts_eq()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, eq: Bass) });
+
+        Assert.Equal(Bass, rig.Vm.Clients[0].Eq.Gains);
+        Assert.Empty(rig.Host.Settings);
+    }
+
+    [Fact]
+    public void A_stored_eq_that_is_invalid_becomes_flat()
+    {
+        var rig = new Rig();
+        rig.Stored[IdA] = new DeviceSettings(0.7f, 0, new float[] { 1, 2, 3 });
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+
+        Assert.True(rig.Vm.Clients[0].Eq.Gains.IsFlat);
+    }
+
+    [Fact]
+    public void A_user_eq_change_sends_and_saves_null_for_flat_and_values_otherwise()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA, volume: 0.8f, offset: 4) });
+
+        rig.Vm.Clients[0].Eq.SelectedPreset = "Bass boost";
+
+        Assert.Equal((IdA, 0.8f, 4.0, Bass), Assert.Single(rig.Host.Settings));
+        var (id, saved) = Assert.Single(rig.Saved);
+        Assert.Equal(IdA, id);
+        Assert.Equal(0.8f, saved.Volume);
+        Assert.Equal(4, saved.OffsetMs);
+        Assert.Equal(Bass.ToArray(), saved.EqGainsDb);
+
+        rig.Vm.Clients[0].Eq.FlatCommand.Execute(null);
+
+        Assert.Equal(2, rig.Host.Settings.Count);
+        Assert.Equal(EqGains.Flat, rig.Host.Settings[1].Eq);
+        Assert.Equal(new DeviceSettings(0.8f, 4, null), rig.Saved[1].Settings);
+        Assert.Null(rig.Saved[1].Settings.EqGainsDb);
+    }
+
+    [Fact]
+    public void A_band_move_sends_once()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+
+        rig.Vm.Clients[0].Eq.Bands[3].GainDb = 2.5;
+
+        var sent = Assert.Single(rig.Host.Settings);
+        Assert.Equal(2.5f, sent.Eq[3]);
+    }
+
+    [Fact]
+    public void Volume_change_after_an_eq_change_resends_the_same_eq()
+    {
+        var rig = new Rig();
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        rig.Vm.Clients[0].Eq.Bands[2].GainDb = 3;
+        var eq = rig.Vm.Clients[0].Eq.Gains;
+
+        rig.Vm.Clients[0].Volume = 0.5f;
+
+        Assert.Equal(2, rig.Host.Settings.Count);
+        Assert.Equal((IdA, 0.5f, 0.0, eq), rig.Host.Settings[^1]);
+        Assert.Equal(eq.ToArray(), rig.Saved[^1].Settings.EqGainsDb);
+    }
+
+    [Fact]
+    public void This_pc_loads_and_saves_under_the_local_device_id_and_calls_setLocalEq()
+    {
+        var rig = new Rig(localDeviceId: LocalId, seedStored: stored => stored[LocalId] = new DeviceSettings(1f, 0, Laptop.ToArray()));
+
+        Assert.Equal(Laptop, rig.Vm.LocalSpeaker.Eq.Gains);
+        Assert.Empty(rig.LocalEqs);   // adopting the stored curve is not a change
+        Assert.Empty(rig.Saved);
+
+        rig.Vm.LocalSpeaker.Eq.SelectedPreset = "Bass boost";
+
+        Assert.Equal(Bass, Assert.Single(rig.LocalEqs));
+        var (id, saved) = Assert.Single(rig.Saved);
+        Assert.Equal(LocalId, id);
+        Assert.Equal(1f, saved.Volume);
+        Assert.Equal(0, saved.OffsetMs);
+        Assert.Equal(Bass.ToArray(), saved.EqGainsDb);
+        Assert.Empty(rig.Host.Settings);   // this PC is not a remote client
+
+        rig.Vm.LocalSpeaker.Eq.FlatCommand.Execute(null);
+
+        Assert.Equal(2, rig.LocalEqs.Count);
+        Assert.Equal(EqGains.Flat, rig.LocalEqs[1]);
+        Assert.Null(rig.Saved[1].Settings.EqGainsDb);
+    }
+
+    [Fact]
+    public void This_pc_does_not_save_without_a_local_device_id_but_still_applies()
+    {
+        var rig = new Rig();   // Guid.Empty
+
+        rig.Vm.LocalSpeaker.Eq.SelectedPreset = "Treble cut";
+
+        Assert.Single(rig.LocalEqs);
+        Assert.Empty(rig.Saved);
+    }
+
+    [Fact]
+    public void This_pc_without_setLocalEq_still_has_a_row_and_changes_call_nothing()
+    {
+        var rig = new Rig(localDeviceId: LocalId, withSetLocalEq: false);
+
+        rig.Vm.LocalSpeaker.Eq.SelectedPreset = "Bass boost";
+
+        Assert.Empty(rig.LocalEqs);
+        Assert.Single(rig.Saved);
+    }
+
+    [Fact]
+    public void This_pc_survives_setLocalEq_and_save_failures()
+    {
+        var vm = new HostViewModel(new FakeHost(), () => HostAudioStatus.Ok, _ => null,
+            (_, _) => throw new IOException("disk"), setLocalEq: _ => throw new InvalidOperationException("pipeline"),
+            localDeviceId: LocalId);
+
+        var ex = Record.Exception(() => vm.LocalSpeaker.Eq.SelectedPreset = "Bass boost");
+
+        Assert.Null(ex);
+        Assert.Equal(Bass, vm.LocalSpeaker.Eq.Gains);
+    }
+
+    [Fact]
+    public void This_pc_ignores_a_throwing_stored_settings_read()
+    {
+        var vm = new HostViewModel(new FakeHost(), () => HostAudioStatus.Ok, _ => throw new IOException("x"), (_, _) => { },
+            localDeviceId: LocalId);
+
+        Assert.True(vm.LocalSpeaker.Eq.Gains.IsFlat);
+    }
+
+    [Theory]
+    [InlineData(HostAudioStatus.Ok, true)]
+    [InlineData(HostAudioStatus.VbCableMissing, false)]
+    [InlineData(HostAudioStatus.VbCableNotDefault, false)]
+    [InlineData(HostAudioStatus.LocalSpeakerIsCaptured, false)]
+    public void This_pc_shows_not_playing_unless_audio_status_is_ok(HostAudioStatus status, bool playing)
+    {
+        var rig = new Rig { Status = status };
+        rig.Vm.RefreshAudioStatus();
+
+        Assert.Equal(playing, rig.Vm.LocalSpeaker.IsPlaying);
+        Assert.Equal(playing ? "Playing here" : "Not playing on this PC", rig.Vm.LocalSpeaker.StatusText);
+        Assert.Equal(playing ? RhythmSync.App.Controls.StatusKind.Hosting : RhythmSync.App.Controls.StatusKind.NotConnected,
+            rig.Vm.LocalSpeaker.Kind);
+
+        // And it follows later changes.
+        rig.Status = playing ? HostAudioStatus.VbCableMissing : HostAudioStatus.Ok;
+        rig.Vm.RefreshAudioStatus();
+        Assert.Equal(!playing, rig.Vm.LocalSpeaker.IsPlaying);
+    }
+
+    [Fact]
+    public void This_pc_follows_actual_local_playback_when_the_owner_reports_it()
+    {
+        bool playing = false;
+        var vm = new HostViewModel(new FakeHost(), () => HostAudioStatus.Ok, _ => null, (_, _) => { }, isPlayingLocally: () => playing);
+
+        // The routing is fine, but nothing plays (no speaker resolves, or the output failed and is retrying).
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+        Assert.Equal("Not playing on this PC", vm.LocalSpeaker.StatusText);
+
+        playing = true;
+        vm.RefreshLocalPlayback();
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+        Assert.Equal("Playing here", vm.LocalSpeaker.StatusText);
+
+        playing = false;
+        vm.RefreshAudioStatus();   // the status did not change; the chip does not move on its own
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+        vm.RefreshLocalPlayback();
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+    }
+
+    [Fact]
+    public void This_pc_playing_callback_is_read_when_the_status_changes_and_a_failing_one_keeps_the_chip()
+    {
+        bool playing = true;
+        bool fail = false;
+        var status = HostAudioStatus.Ok;
+        var vm = new HostViewModel(new FakeHost(), () => status, _ => null, (_, _) => { },
+            isPlayingLocally: () => fail ? throw new InvalidOperationException("gone") : playing);
+        Assert.True(vm.LocalSpeaker.IsPlaying);
+
+        playing = false;
+        status = HostAudioStatus.VbCableMissing;
+        vm.RefreshAudioStatus();
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+
+        playing = true;
+        fail = true;
+        vm.RefreshLocalPlayback();   // logged; the last value stays
+        Assert.False(vm.LocalSpeaker.IsPlaying);
+    }
+
+    [Fact]
+    public void This_pc_copy_is_exact()
+    {
+        Assert.Equal("This PC", LocalSpeakerRowViewModel.NameText);
+        Assert.Equal("Playing here", LocalSpeakerRowViewModel.PlayingText);
+        Assert.Equal("Not playing on this PC", LocalSpeakerRowViewModel.NotPlayingText);
+    }
+
+    [Fact]
+    public void This_pc_is_not_counted_as_a_client()
+    {
+        var rig = new Rig();
+
+        Assert.Empty(rig.Vm.Clients);
+        Assert.True(rig.Vm.HasNoClients);
+
+        rig.Vm.UpdateClients(new[] { Client(IdA) });
+        Assert.Single(rig.Vm.Clients);
     }
 }

@@ -1,3 +1,4 @@
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 
@@ -16,6 +17,9 @@ public interface IClientSessionControl
 
     /// <summary>This PC's offset in ms as the host set it.</summary>
     double OffsetMs { get; }
+
+    /// <summary>This PC's 10-band EQ as the host set it (flat until the host sends one).</summary>
+    EqGains Eq { get; }
 
     PlaybackStats? Stats { get; }
 

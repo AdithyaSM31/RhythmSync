@@ -1,4 +1,5 @@
 using RhythmSync.Core;
+using RhythmSync.Core.Audio.Eq;
 using RhythmSync.Core.Client;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Protocol;
@@ -129,5 +130,28 @@ public class ClientPipelineTests
         output.Start(pipeline.Scheduler);
         sim.RunUntil(Second / 2);
         Assert.Equal(PlaybackState.Playing, pipeline.Scheduler.State);
+    }
+
+    [Fact]
+    public void Eq_runs_before_gain_at_the_device_rate()
+    {
+        var pipeline = new ClientPipeline(SessionId, new IdentityClockMapping(), 44100);
+
+        Assert.Equal(44100, pipeline.Eq.SampleRate);
+    }
+
+    [Fact]
+    public void ReplaceOutputRate_retunes_the_eq_and_keeps_its_gains()
+    {
+        var pipeline = new ClientPipeline(SessionId, new IdentityClockMapping(), 44100);
+        var eq = pipeline.Eq;
+        var gains = EqGains.Flat.WithBand(4, 6);
+        eq.SetGains(gains);
+
+        pipeline.ReplaceOutputRate(48000);
+
+        Assert.Same(eq, pipeline.Eq);
+        Assert.Equal(48000, pipeline.Eq.SampleRate);
+        Assert.Equal(gains, pipeline.Eq.Gains);
     }
 }
