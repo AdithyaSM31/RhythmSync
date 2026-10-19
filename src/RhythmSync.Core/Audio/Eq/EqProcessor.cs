@@ -8,22 +8,22 @@ namespace RhythmSync.Core.Audio.Eq;
 /// <c>double</c>) followed by the automatic preamp. <see cref="SetGains"/> may be called from any thread: it builds
 /// an immutable target (gains plus preamp) under a control lock and publishes it with one volatile write.
 /// <see cref="Process"/> runs on one audio thread, reads that target once per call, and never allocates or locks.
-/// Gain and preamp changes are smoothed per 32-frame sub-block (one-pole, tau = 10 ms), so they do not click.
-/// When the curve is Flat and fully settled, <see cref="Process"/> leaves the samples untouched (bit-exact).
+/// Changes are smoothed per 32-frame sub-block: band gains in dB (tau = 10 ms) with their coefficients interpolated
+/// per sample, and the preamp in dB, falling fast (2 ms) and rising slowly (20 ms) so the attenuation always leads
+/// the boost. When the curve is Flat and fully settled, <see cref="Process"/> leaves the samples untouched (bit-exact).
 /// </summary>
 public sealed class EqProcessor : IAudioProcessor
 {
     private const int MaxChannels = 2;
     private const int SubBlockFrames = 32;
-    private const double SmoothingSeconds = 0.010;
+    private const double GainSeconds = 0.010;
+    private const double PreampFallSeconds = 0.002;
+    private const double PreampRiseSeconds = 0.020;
     private const double SnapDb = 0.01;
     private const double DenormalLimit = 1e-30;
 
-    // A linear preamp within this fraction of its target is within 0.01 dB of it.
-    private static readonly double PreampSnapRatio = Math.Pow(10, SnapDb / 20) - 1;
-
     /// <summary>What the audio thread moves toward. <see cref="GainsDb"/> is 0 for bands inactive at <see cref="Rate"/>.</summary>
-    private sealed record Target(EqGains Gains, int Rate, double[] GainsDb, double PreampLinear)
+    private sealed record Target(EqGains Gains, int Rate, double[] GainsDb, double PreampDb, double PreampLinear)
     {
         public bool IsBypass { get; } = PreampLinear == 1.0 && Array.TrueForAll(GainsDb, g => g == 0.0);
     }
@@ -33,15 +33,22 @@ public sealed class EqProcessor : IAudioProcessor
     private int _sampleRate;
 
     // Rate constants: written by the constructor and SetSampleRate (while no Process call runs), read by Process.
+    // The k tables hold the one-pole factor 1 - exp(-n / (tau * rate)) for a sub-block of n = 0..32 frames.
     private readonly double[] _cosW0 = new double[EqBands.Count];
     private readonly double[] _alpha = new double[EqBands.Count];
     private readonly bool[] _active = new bool[EqBands.Count];
-    private double _k;
+    private readonly double[] _kGain = new double[SubBlockFrames + 1];
+    private readonly double[] _kPreampFall = new double[SubBlockFrames + 1];
+    private readonly double[] _kPreampRise = new double[SubBlockFrames + 1];
 
-    // Audio-thread state (also reset by SetSampleRate).
+    // Audio-thread state (also reset by SetSampleRate). While a band moves, _coefFrom holds its coefficients at the
+    // start of the sub-block and _coef those at its end; otherwise _coef alone is used.
     private readonly double[] _curDb = new double[EqBands.Count];
+    private double _curPreampDb;
     private double _curPreamp;
     private readonly Biquad[] _coef = new Biquad[EqBands.Count];
+    private readonly Biquad[] _coefFrom = new Biquad[EqBands.Count];
+    private readonly bool[] _moving = new bool[EqBands.Count];
     private readonly double[] _state = new double[MaxChannels * EqBands.Count * 2];
     private readonly double[] _scratch = new double[SubBlockFrames];
     private bool _bypassing; // true while Process passes audio through; the state is zero then
@@ -106,7 +113,7 @@ public sealed class EqProcessor : IAudioProcessor
         {
             int n = Math.Min(SubBlockFrames, frames - start);
             double preampFrom = _curPreamp;
-            Smooth(target);
+            Smooth(target, n);
             Filter(interleaved.Slice(start * channels, n * channels), channels, n, preampFrom, _curPreamp);
         }
 
@@ -135,7 +142,8 @@ public sealed class EqProcessor : IAudioProcessor
         var gainsDb = new double[EqBands.Count];
         for (int band = 0; band < EqBands.Count; band++)
             gainsDb[band] = EqCurve.IsActive(band, sampleRate) ? gains[band] : 0.0;
-        return new Target(gains, sampleRate, gainsDb, Math.Pow(10, EqCurve.PreampDb(gains, sampleRate) / 20));
+        double preampDb = EqCurve.PreampDb(gains, sampleRate);
+        return new Target(gains, sampleRate, gainsDb, preampDb, Math.Pow(10, preampDb / 20));
     }
 
     // Caller holds _control (or is the constructor), and no Process call runs.
@@ -151,7 +159,13 @@ public sealed class EqProcessor : IAudioProcessor
             _curDb[band] = target.GainsDb[band];
             if (_active[band]) _coef[band] = Coefficients(band, _curDb[band]);
         }
-        _k = 1 - Math.Exp(-SubBlockFrames / (SmoothingSeconds * rate));
+        for (int n = 0; n <= SubBlockFrames; n++)
+        {
+            _kGain[n] = 1 - Math.Exp(-n / (GainSeconds * rate));
+            _kPreampFall[n] = 1 - Math.Exp(-n / (PreampFallSeconds * rate));
+            _kPreampRise[n] = 1 - Math.Exp(-n / (PreampRiseSeconds * rate));
+        }
+        _curPreampDb = target.PreampDb;
         _curPreamp = target.PreampLinear;
         Array.Clear(_state);
         _bypassing = true;
@@ -174,27 +188,46 @@ public sealed class EqProcessor : IAudioProcessor
         return true;
     }
 
-    // One smoothing step, at the start of a sub-block. Snaps assign the target exactly, so Flat can reach bypass.
+    // One smoothing step for a sub-block of `frames` frames: moves the band gains and the preamp to their values
+    // at the sub-block's end. Snaps assign the target exactly, so Flat can reach bypass.
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private void Smooth(Target target)
+    private void Smooth(Target target, int frames)
     {
-        double k = _k;
+        double k = _kGain[frames];
+        bool anyBandMoving = false;
         for (int band = 0; band < EqBands.Count; band++)
         {
             double goal = target.GainsDb[band], cur = _curDb[band];
+            _moving[band] = cur != goal && _active[band];
             if (cur == goal) continue;
+            anyBandMoving = true;
             cur += (goal - cur) * k;
             if (Math.Abs(goal - cur) <= SnapDb) cur = goal;
             _curDb[band] = cur;
-            if (_active[band]) _coef[band] = Coefficients(band, cur);
+            if (_active[band])
+            {
+                _coefFrom[band] = _coef[band];
+                _coef[band] = Coefficients(band, cur);
+            }
         }
 
-        double goalPreamp = target.PreampLinear, preamp = _curPreamp;
-        if (preamp != goalPreamp)
+        // In dB, falling fast and rising slowly, so the attenuation leads the band boosts both ways. A rise also
+        // waits until no band is moving: a boosted band's output lags its coefficients (its resonance holds energy
+        // for a few ms at 1 kHz and tens of ms at 31 Hz), so lifting the preamp earlier briefly overshoots 0 dBFS.
+        double goalDb = target.PreampDb, preampDb = _curPreampDb;
+        if (preampDb != goalDb && (goalDb < preampDb || !anyBandMoving))
         {
-            preamp += (goalPreamp - preamp) * k;
-            if (Math.Abs(goalPreamp - preamp) <= goalPreamp * PreampSnapRatio) preamp = goalPreamp;
-            _curPreamp = preamp;
+            preampDb += (goalDb - preampDb) * (goalDb < preampDb ? _kPreampFall[frames] : _kPreampRise[frames]);
+            if (Math.Abs(goalDb - preampDb) <= SnapDb)
+            {
+                _curPreampDb = goalDb;
+                _curPreamp = target.PreampLinear;
+            }
+            else
+            {
+                _curPreampDb = preampDb;
+                _curPreamp = Math.Pow(10, preampDb / 20);
+            }
         }
     }
 
@@ -213,8 +246,9 @@ public sealed class EqProcessor : IAudioProcessor
             (1 - alpha / a) / a0);
     }
 
-    // Runs one sub-block of `frames` frames through every active band, then applies the preamp, ramped linearly
-    // from preampFrom to preampTo so the last frame lands on preampTo.
+    // Runs one sub-block of `frames` frames through every active band, then applies the preamp. A moving band's
+    // coefficients, and the linear preamp, are interpolated per sample so the last frame lands on the end values.
+    // Every interpolated filter is stable: the (a1, a2) stability triangle is convex.
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Filter(Span<float> block, int channels, int frames, double preampFrom, double preampTo)
     {
@@ -229,13 +263,34 @@ public sealed class EqProcessor : IAudioProcessor
                 if (!_active[band]) continue;
                 Biquad q = _coef[band];
                 double s1 = _state[s], s2 = _state[s + 1];
-                for (int i = 0; i < frames; i++)
+                if (_moving[band])
                 {
-                    double input = x[i];
-                    double y = q.B0 * input + s1;
-                    s1 = q.B1 * input - q.A1 * y + s2;
-                    s2 = q.B2 * input - q.A2 * y;
-                    x[i] = y;
+                    Biquad f = _coefFrom[band];
+                    double step = 1.0 / frames;
+                    double dB0 = (q.B0 - f.B0) * step, dB1 = (q.B1 - f.B1) * step, dB2 = (q.B2 - f.B2) * step;
+                    double dA1 = (q.A1 - f.A1) * step, dA2 = (q.A2 - f.A2) * step;
+                    for (int i = 0; i < frames; i++)
+                    {
+                        double t = i + 1;
+                        double b0 = f.B0 + dB0 * t, b1 = f.B1 + dB1 * t, b2 = f.B2 + dB2 * t;
+                        double a1 = f.A1 + dA1 * t, a2 = f.A2 + dA2 * t;
+                        double input = x[i];
+                        double y = b0 * input + s1;
+                        s1 = b1 * input - a1 * y + s2;
+                        s2 = b2 * input - a2 * y;
+                        x[i] = y;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < frames; i++)
+                    {
+                        double input = x[i];
+                        double y = q.B0 * input + s1;
+                        s1 = q.B1 * input - q.A1 * y + s2;
+                        s2 = q.B2 * input - q.A2 * y;
+                        x[i] = y;
+                    }
                 }
                 _state[s] = s1;
                 _state[s + 1] = s2;

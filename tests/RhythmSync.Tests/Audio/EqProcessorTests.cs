@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using RhythmSync.Core.Audio.Eq;
+using Xunit.Abstractions;
 
 namespace RhythmSync.Tests.Audio;
 
@@ -20,6 +21,10 @@ public class EqProcessorTests
 {
     private const int Rate = 48000;
     private const int Buffer = 480;
+
+    private readonly ITestOutputHelper _output;
+
+    public EqProcessorTests(ITestOutputHelper output) => _output = output;
 
     private static EqGains Preset(string name) => EqPresets.All.Single(p => p.Name == name).Gains;
 
@@ -145,7 +150,7 @@ public class EqProcessorTests
     /// largest second difference in the 200 ms after it must stay within 1.5x the larger of the settled 200 ms before
     /// it and the 200 ms from 1 s after it.
     /// </summary>
-    private static float[] AssertClickFree(params (double AtSeconds, EqGains Gains)[] changes)
+    private float[] CheckClickFree(List<string> failures, params (double AtSeconds, EqGains Gains)[] changes)
     {
         const int channels = 2;
         var audio = Sine(1000, Rate, changes[^1].AtSeconds + 1.2, 0.25f, channels);
@@ -165,8 +170,10 @@ public class EqProcessorTests
             double before = MaxSecondDifference(audio, channels, at - window, at);
             double during = MaxSecondDifference(audio, channels, at, at + window);
             double after = MaxSecondDifference(audio, channels, at + Rate, at + Rate + window);
-            Assert.True(during <= 1.5 * Math.Max(before, after),
-                $"Change to [{string.Join(' ', gains.ToArray())}] at {atSeconds} s: during {during:G4}, before {before:G4}, after {after:G4}.");
+            double ratio = during / Math.Max(before, after);
+            string line = $"Change to [{string.Join(' ', gains.ToArray())}] at {atSeconds} s: ratio {ratio:F3} (during {during:G4}, before {before:G4}, after {after:G4}).";
+            _output.WriteLine(line);
+            if (ratio > 1.5) failures.Add(line);
         }
         return audio;
     }
@@ -174,11 +181,90 @@ public class EqProcessorTests
     [Fact]
     public void Gain_steps_are_click_free()
     {
+        var failures = new List<string>();
+
         // Flat -> +12 at 1 kHz: the first second runs in bypass (bit-exact), so this also covers leaving bypass.
-        var audio = AssertClickFree((1.0, EqGains.Flat.WithBand(5, 12)));
+        var audio = CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(5, 12)));
         AssertBitEqual(Sine(1000, Rate, 1.0, 0.25f, 2), audio[..(2 * Rate)]);
 
-        AssertClickFree((1.0, Preset("Laptop speakers")), (2.5, EqGains.Flat));
+        CheckClickFree(failures, (1.0, Preset("Laptop speakers")), (2.5, EqGains.Flat));
+        // High bands move b0 a lot for a small gain step: these clicked when coefficients stepped per sub-block.
+        CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(9, 12)));
+        CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(8, 12)));
+        CheckClickFree(failures, (1.0, Preset("Treble cut")));
+        CheckClickFree(failures, (1.0, Preset("Laptop speakers")), (2.5, Preset("Treble cut")));
+        Assert.Empty(failures);
+    }
+
+    private static EqGains AllBands(float db) => EqGains.Create(Enumerable.Repeat(db, EqBands.Count).ToArray());
+
+    // Frequency of the curve's highest point, from a dense log sweep.
+    private static double PeakHz(EqGains gains, int rate)
+    {
+        double best = 0, bestDb = double.NegativeInfinity, from = 20, to = Math.Min(20000, 0.45 * rate);
+        for (int i = 0; i < 4000; i++)
+        {
+            double hz = from * Math.Pow(to / from, i / 3999.0);
+            double db = EqCurve.ResponseDb(gains, rate, hz);
+            if (db > bestDb) (best, bestDb) = (hz, db);
+        }
+        return best;
+    }
+
+    [Theory]
+    [InlineData(5)]  // +12 at 1 kHz
+    [InlineData(-1)] // every band at +12
+    [InlineData(0)]  // +12 at 31 Hz: the slowest resonance
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]  // +12 at 16 kHz
+    public void Preset_and_band_ramps_never_exceed_full_scale(int band)
+    {
+        var curve = band < 0 ? AllBands(12) : EqGains.Flat.WithBand(band, 12);
+        double hz = PeakHz(curve, Rate);
+        // Full-scale sine at the curve's peak: Flat for 0.5 s, the curve for 1 s, then Flat again for 1 s.
+        var audio = Sine(hz, Rate, 2.5, 1f, 2);
+        var eq = new EqProcessor(Rate);
+        for (int start = 0, frames = audio.Length / 2; start < frames; start += Buffer)
+        {
+            if (start == Rate / 2) eq.SetGains(curve);
+            if (start == 3 * Rate / 2) eq.SetGains(EqGains.Flat);
+            eq.Process(audio.AsSpan(2 * start, 2 * Math.Min(Buffer, frames - start)), 2);
+        }
+
+        int up = 0, down = 0;
+        double peakUp = 0, peakDown = 0;
+        for (int i = 0; i < audio.Length; i++)
+        {
+            double m = Math.Abs(audio[i]);
+            if (i < 3 * Rate) peakUp = Math.Max(peakUp, m); else peakDown = Math.Max(peakDown, m);
+            if (m > 1.0 + 1e-4) { if (i < 3 * Rate) up++; else down++; }
+        }
+        string summary = $"{hz:F1} Hz: {up} samples over full scale ramping up (peak {peakUp:F7}), {down} ramping back (peak {peakDown:F7}).";
+        _output.WriteLine(summary);
+        Assert.True(up == 0 && down == 0, summary);
+    }
+
+    [Fact]
+    public void Smoothing_speed_does_not_depend_on_call_size()
+    {
+        double GainAfter10Ms(int framesPerCall)
+        {
+            var eq = new EqProcessor(Rate);
+            eq.SetGains(EqGains.Flat.WithBand(3, 12));
+            ProcessInBuffers(eq, Sine(250, Rate, 0.01, 0.25f, 2), 2, framesPerCall);
+            return eq.CurrentGainDb(3);
+        }
+
+        double reference = GainAfter10Ms(480); // 15 full sub-blocks: 12 (1 - e^-1)
+        Assert.Equal(12 * (1 - Math.Exp(-1)), reference, 1e-9);
+        foreach (int framesPerCall in new[] { 1, 7, 33 })
+            Assert.Equal(reference, GainAfter10Ms(framesPerCall), 1e-9);
     }
 
     [Fact]
@@ -328,25 +414,28 @@ public class EqProcessorTests
                 failures.Add($"call {b.CurrentPhaseNumber}: target rate {target.SampleRate}, rate {eq.SampleRate}, preamp {target.PreampLinear} vs {expectedPreamp}");
         });
 
-        var gainsTask = Task.Factory.StartNew(() =>
+        // A thread that leaves (normally or by throwing) drops out of the barrier, so the other never waits forever.
+        Task Race(Action call) => Task.Factory.StartNew(() =>
         {
-            var rng = new Random(1);
-            for (int i = 0; i < 1000; i++)
+            try
             {
-                eq.SetGains(presets[rng.Next(presets.Length)]);
-                step.SignalAndWait();
+                for (int i = 0; i < 1000; i++)
+                {
+                    call();
+                    step.SignalAndWait();
+                }
+            }
+            finally
+            {
+                step.RemoveParticipant();
             }
         }, TaskCreationOptions.LongRunning);
-        var rateTask = Task.Factory.StartNew(() =>
-        {
-            var rng = new Random(2);
-            for (int i = 0; i < 1000; i++)
-            {
-                eq.SetSampleRate(rng.Next(2) == 0 ? 44100 : 48000);
-                step.SignalAndWait();
-            }
-        }, TaskCreationOptions.LongRunning);
-        await Task.WhenAll(gainsTask, rateTask);
+
+        var gainsRng = new Random(1);
+        var rateRng = new Random(2);
+        await Task.WhenAll(
+            Race(() => eq.SetGains(presets[gainsRng.Next(presets.Length)])),
+            Race(() => eq.SetSampleRate(rateRng.Next(2) == 0 ? 44100 : 48000)));
 
         Assert.Empty(failures);
         var final = eq.CurrentTarget;
