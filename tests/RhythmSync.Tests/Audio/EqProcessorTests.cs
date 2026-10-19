@@ -28,14 +28,14 @@ public class EqProcessorTests
 
     private static EqGains Preset(string name) => EqPresets.All.Single(p => p.Name == name).Gains;
 
-    /// <summary>A sine of <paramref name="amp"/> at <paramref name="hz"/>, the same on every channel.</summary>
-    private static float[] Sine(double hz, int rate, double seconds, float amp, int channels = 1)
+    /// <summary>A sine of <paramref name="amp"/> at <paramref name="hz"/>, the same on every channel, starting at <paramref name="phaseDegrees"/>.</summary>
+    private static float[] Sine(double hz, int rate, double seconds, float amp, int channels = 1, double phaseDegrees = 0)
     {
         int frames = (int)Math.Round(seconds * rate);
         var buf = new float[frames * channels];
         for (int n = 0; n < frames; n++)
         {
-            float s = (float)(amp * Math.Sin(2 * Math.PI * hz * n / rate));
+            float s = (float)(amp * Math.Sin(2 * Math.PI * hz * n / rate + phaseDegrees * Math.PI / 180));
             for (int c = 0; c < channels; c++) buf[n * channels + c] = s;
         }
         return buf;
@@ -146,14 +146,15 @@ public class EqProcessorTests
     }
 
     /// <summary>
-    /// Plays a 1 kHz sine at 0.25 in 480-frame buffers, applying each change at its time. Around every change, the
-    /// largest second difference in the 200 ms after it must stay within 1.5x the larger of the settled 200 ms before
-    /// it and the 200 ms from 1 s after it.
+    /// Plays a 1 kHz sine at 0.25 in 480-frame buffers, applying each change at its time. Every change lands on a whole
+    /// number of periods, so the tone is at <paramref name="phaseDegrees"/> when it does. Around every change, the largest
+    /// second difference in the 200 ms after it must stay within 1.5x the larger of the settled 200 ms before it and
+    /// the 200 ms from 1 s after it.
     /// </summary>
-    private float[] CheckClickFree(List<string> failures, params (double AtSeconds, EqGains Gains)[] changes)
+    private float[] CheckClickFree(List<string> failures, double phaseDegrees, params (double AtSeconds, EqGains Gains)[] changes)
     {
         const int channels = 2;
-        var audio = Sine(1000, Rate, changes[^1].AtSeconds + 1.2, 0.25f, channels);
+        var audio = Sine(1000, Rate, changes[^1].AtSeconds + 1.2, 0.25f, channels, phaseDegrees);
         var eq = new EqProcessor(Rate);
         int frames = audio.Length / channels, next = 0;
         for (int start = 0; start < frames; start += Buffer)
@@ -171,28 +172,32 @@ public class EqProcessorTests
             double during = MaxSecondDifference(audio, channels, at, at + window);
             double after = MaxSecondDifference(audio, channels, at + Rate, at + Rate + window);
             double ratio = during / Math.Max(before, after);
-            string line = $"Change to [{string.Join(' ', gains.ToArray())}] at {atSeconds} s: ratio {ratio:F3} (during {during:G4}, before {before:G4}, after {after:G4}).";
+            string line = $"{phaseDegrees}°, change to [{string.Join(' ', gains.ToArray())}] at {atSeconds} s: ratio {ratio:F3} (during {during:G4}, before {before:G4}, after {after:G4}).";
             _output.WriteLine(line);
             if (ratio > 1.5) failures.Add(line);
         }
         return audio;
     }
 
-    [Fact]
-    public void Gain_steps_are_click_free()
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(45.0)]
+    [InlineData(90.0)]
+    [InlineData(135.0)]
+    public void Gain_steps_are_click_free(double phaseDegrees)
     {
         var failures = new List<string>();
 
         // Flat -> +12 at 1 kHz: the first second runs in bypass (bit-exact), so this also covers leaving bypass.
-        var audio = CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(5, 12)));
-        AssertBitEqual(Sine(1000, Rate, 1.0, 0.25f, 2), audio[..(2 * Rate)]);
+        var audio = CheckClickFree(failures, phaseDegrees, (1.0, EqGains.Flat.WithBand(5, 12)));
+        AssertBitEqual(Sine(1000, Rate, 1.0, 0.25f, 2, phaseDegrees), audio[..(2 * Rate)]);
 
-        CheckClickFree(failures, (1.0, Preset("Laptop speakers")), (2.5, EqGains.Flat));
+        CheckClickFree(failures, phaseDegrees, (1.0, Preset("Laptop speakers")), (2.5, EqGains.Flat));
         // High bands move b0 a lot for a small gain step: these clicked when coefficients stepped per sub-block.
-        CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(9, 12)));
-        CheckClickFree(failures, (1.0, EqGains.Flat.WithBand(8, 12)));
-        CheckClickFree(failures, (1.0, Preset("Treble cut")));
-        CheckClickFree(failures, (1.0, Preset("Laptop speakers")), (2.5, Preset("Treble cut")));
+        CheckClickFree(failures, phaseDegrees, (1.0, EqGains.Flat.WithBand(9, 12)));
+        CheckClickFree(failures, phaseDegrees, (1.0, EqGains.Flat.WithBand(8, 12)));
+        CheckClickFree(failures, phaseDegrees, (1.0, Preset("Treble cut")));
+        CheckClickFree(failures, phaseDegrees, (1.0, Preset("Laptop speakers")), (2.5, Preset("Treble cut")));
         Assert.Empty(failures);
     }
 

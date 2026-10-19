@@ -9,15 +9,16 @@ namespace RhythmSync.Core.Audio.Eq;
 /// an immutable target (gains plus preamp) under a control lock and publishes it with one volatile write.
 /// <see cref="Process"/> runs on one audio thread, reads that target once per call, and never allocates or locks.
 /// Changes are smoothed per 32-frame sub-block: band gains in dB (tau = 10 ms) with their coefficients interpolated
-/// per sample, and the preamp in dB, falling fast (2 ms) and rising slowly (20 ms) so the attenuation always leads
-/// the boost. When the curve is Flat and fully settled, <see cref="Process"/> leaves the samples untouched (bit-exact).
+/// per sample, and the preamp in dB, falling fast (5 ms) and rising slowly (20 ms, once no band moves) so the
+/// attenuation always leads the boost. When the curve is Flat and fully settled, <see cref="Process"/> leaves the
+/// samples untouched (bit-exact).
 /// </summary>
 public sealed class EqProcessor : IAudioProcessor
 {
     private const int MaxChannels = 2;
     private const int SubBlockFrames = 32;
     private const double GainSeconds = 0.010;
-    private const double PreampFallSeconds = 0.002;
+    private const double PreampFallSeconds = 0.005;
     private const double PreampRiseSeconds = 0.020;
     private const double SnapDb = 0.01;
     private const double DenormalLimit = 1e-30;
