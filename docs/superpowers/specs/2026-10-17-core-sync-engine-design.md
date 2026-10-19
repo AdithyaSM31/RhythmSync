@@ -104,6 +104,12 @@ The **per-device delay offset** is not a DSP stage: it is added to the target ho
 `≥ −(targetLatencyMs − 50)` so a client never asks for audio that has not arrived yet. Calibration
 (sub-project 3) will write this same value.
 
+An offset change made by the user (a `SetDeviceSettings` from the host's slider, ±1 ms buttons or typed value) that moves
+the effective offset by more than **0.25 ms** forces one hard resync on the next render (§5.4 step 5: fade out, jump, fade in),
+so it is heard at once; smaller changes are slewed by the PI loop. Automatic drift correction and latency re-clamps never
+force a resync (a latency step is handled as in §6). The host UI sends one change per drag (the slider commits 300 ms after
+the last movement), so tuning by ear does not cause a resync per slider step.
+
 ## 4. Protocol
 
 All binary fields little-endian. Times are `i64` in 100 ns ticks of host session time unless noted.

@@ -81,9 +81,9 @@ dotnet run --project src/RhythmSync.App -- --minimized
 
 ## Tuning the offset
 
-The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and move the offset slider in that client's row on the host until its clicks line up with the host's. The host's own speakers have a fixed offset of 0 and no slider, so tune each client against the host. Automatic calibration is planned as sub-project 3.
+The app does not yet measure how long each PC's output path takes (sound card, DAC, speakers, Bluetooth). PCs with different hardware will be a few milliseconds apart or more. Tune once by ear or with a recording: play a click track, record from the midpoint between two PCs, and adjust the offset in that client's row on the host until its clicks line up with the host's. Drag the slider (it applies when you release it), press −1 or +1 for single-millisecond steps, or type an exact value such as −13 or 12.5 in the box and press Enter. The host's own speakers have a fixed offset of 0 and no slider, so tune each client against the host. Automatic calibration is planned as sub-project 3.
 
-An offset change of more than 2 ms takes effect at once, with one short resync (a brief fade out and in) on that client. Smaller nudges are slewed in without a fade, at up to 0.5 ms per second. Latency changes work the same way in reverse: a step of more than 20 ms resyncs once, a smaller one (a single 10 ms key press on the latency slider) settles gradually over about 20 seconds.
+Any offset change you make (more than 0.25 ms) takes effect at once, with one short resync (a brief fade out and in) on that client, so you hear each step as soon as you make it. Latency changes work differently: a step of more than 20 ms resyncs once, a smaller one (a single 10 ms key press on the latency slider) settles gradually, at up to 0.5 ms per second, over about 20 seconds.
 
 ## Ports
 
@@ -116,7 +116,7 @@ dotnet run --project tools/IconGen
 - Bluetooth speakers are not supported for same-room sync; their latency is large and varies.
 - The pairing code is 4 digits. Three wrong codes from one device id lock that device out for 30 seconds, and more than 10 wrong codes within 30 seconds from any devices lock out every join for 30 seconds. That slows guessing to about 11 codes per 30 seconds, so finding the code takes hours, but someone on the LAN can still find it eventually, and can keep honest PCs from joining while they try.
 - If the captured device (CABLE Input, or the default device without VB-CABLE) is lost while hosting, the host restarts its session; clients reconnect after a few seconds of silence.
-- Each PC's output latency is not measured automatically; use the offset slider on the host.
+- Each PC's output latency is not measured automatically; tune the offset on the host.
 - Maximum 8 clients per host. The design target is 2 to 4 PCs.
 
 ## Acceptance testing
