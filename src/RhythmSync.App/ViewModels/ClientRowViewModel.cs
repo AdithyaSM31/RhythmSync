@@ -1,5 +1,6 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using RhythmSync.Core.Clock;
 using RhythmSync.Core.Host;
 
@@ -22,6 +23,7 @@ public sealed partial class ClientRowViewModel : ObservableObject
     private readonly Action<ClientRowViewModel> _userChanged;
     private float _volume = MaxVolume;
     private double _offsetMs;
+    private string _offsetInput = "0";
     private bool _adopting;
 
     internal ClientRowViewModel(ConnectedClient client, Action<ClientRowViewModel> userChanged)
@@ -109,8 +111,65 @@ public sealed partial class ClientRowViewModel : ObservableObject
             double v = Math.Clamp(value, -MaxOffsetMs, MaxOffsetMs);
             if (!SetProperty(ref _offsetMs, v)) return;
             OnPropertyChanged(nameof(OffsetText));
+            ShowOffsetInput();
             if (!_adopting) _userChanged(this);
         }
+    }
+
+    /// <summary>
+    /// The text of the offset box: the exact offset (to 0.1 ms) while it follows <see cref="OffsetMs"/>, or what the user
+    /// has typed so far. <see cref="CommitOffsetInputCommand"/> applies it.
+    /// </summary>
+    public string OffsetInput
+    {
+        get => _offsetInput;
+        set => SetProperty(ref _offsetInput, value);
+    }
+
+    /// <summary>Moves the offset 1 ms earlier: from its value rounded to a whole ms, clamped to ±100.</summary>
+    [RelayCommand]
+    private void DecreaseOffset() => OffsetMs = Math.Round(OffsetMs) - 1;
+
+    /// <summary>Moves the offset 1 ms later: from its value rounded to a whole ms, clamped to ±100.</summary>
+    [RelayCommand]
+    private void IncreaseOffset() => OffsetMs = Math.Round(OffsetMs) + 1;
+
+    /// <summary>
+    /// Applies the text in the offset box (Enter or leaving the box). Text that is not a number is ignored; either way
+    /// the box then shows the current offset again.
+    /// </summary>
+    [RelayCommand]
+    private void CommitOffsetInput()
+    {
+        if (TryParseOffset(OffsetInput, out double ms))
+            OffsetMs = ms;
+        ShowOffsetInput();
+    }
+
+    /// <summary>
+    /// Parses a typed offset: invariant culture, an optional sign, digits with an optional decimal point and an optional
+    /// "ms" suffix, spaces around. Rounds to 0.1 ms and clamps to ±100. Anything else (including NaN and infinities) fails.
+    /// </summary>
+    internal static bool TryParseOffset(string? text, out double ms)
+    {
+        ms = 0;
+        string t = (text ?? "").Trim();
+        if (t.EndsWith("ms", StringComparison.OrdinalIgnoreCase))
+            t = t[..^2].TrimEnd();
+        if (t.Length == 0 ||
+            !double.TryParse(t, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double v) ||
+            !double.IsFinite(v))
+            return false;
+        ms = Math.Clamp(Math.Round(v, 1, MidpointRounding.AwayFromZero), -MaxOffsetMs, MaxOffsetMs) + 0.0;   // + 0.0: no negative zero
+        return true;
+    }
+
+    private void ShowOffsetInput()
+    {
+        string text = Math.Round(_offsetMs, 1, MidpointRounding.AwayFromZero).ToString("0.#", CultureInfo.InvariantCulture);
+        // Raised even when the text is unchanged: the box must revert what was typed.
+        if (!SetProperty(ref _offsetInput, text == "-0" ? "0" : text, nameof(OffsetInput)))
+            OnPropertyChanged(nameof(OffsetInput));
     }
 
     public string VolumeText => $"Volume: {Math.Round(_volume * 100).ToString("F0", CultureInfo.InvariantCulture)}%";
