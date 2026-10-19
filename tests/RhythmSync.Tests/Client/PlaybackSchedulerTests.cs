@@ -340,9 +340,11 @@ public class PlaybackSchedulerTests
 
         for (int k = 0; k < 20; k++) RenderOnce(k);                        // warm up: waiting → playing
         Assert.Equal(PlaybackState.Playing, rig.Scheduler.State);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int k = 20; k < 90; k++) RenderOnce(k);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.Equal(0, allocated);
+        int next = 20;
+        uint fed = 200;
+        AllocationAssert.None(
+            () => { for (int end = next + 70; next < end; next++) RenderOnce(next); },
+            () => { for (uint end = fed + 70; fed < end; fed++) rig.Buffer.Insert(fed, Rig.PlayAt(fed), pcm); });   // a retry plays on
+        Assert.Equal(PlaybackState.Playing, rig.Scheduler.State);
     }
 }

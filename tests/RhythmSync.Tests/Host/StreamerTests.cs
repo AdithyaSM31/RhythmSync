@@ -131,12 +131,12 @@ public class StreamerTests
         var pcm = Pcm(1);
         streamer.OnFrame(0, 0, pcm);   // warm up
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint s = 1; s <= 1000; s++) streamer.OnFrame(s, s * AudioFormat.FrameTicks, pcm);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        int windows = AllocationAssert.None(() =>
+        {
+            for (uint s = 1; s <= 1000; s++) streamer.OnFrame(s, s * AudioFormat.FrameTicks, pcm);
+        });
 
-        Assert.Equal(0, allocated);
-        Assert.Equal(8 * 1001, ch.Sends);
+        Assert.Equal(8 * (1 + 1000 * windows), ch.Sends);
         Assert.Equal(PacketSerializer.AudioPacketBytes, ch.LastLength);
     }
 

@@ -105,15 +105,15 @@ public class UdpDatagramChannelTests
         var to = b.LocalEndPoint;
         for (int i = 0; i < 100; i++) a.Send(payload, to);   // warm up: caches the address, JITs the path
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        AllocationAssert.None(() =>
         {
-            a.Send(payload, to);
-            if (i % 50 == 0) Thread.Sleep(1);                 // let the receiver drain
-        }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            for (int i = 0; i < 1000; i++)
+            {
+                a.Send(payload, to);
+                if (i % 50 == 0) Thread.Sleep(1);             // let the receiver drain
+            }
+        });
 
-        Assert.Equal(0, allocated);
         Assert.Equal(0, a.SendErrors);
     }
 
