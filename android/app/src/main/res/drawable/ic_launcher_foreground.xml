@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    RhythmSync "sync wave" logo (src/RhythmSync.App/Assets/RhythmSync.svg) on the 108dp adaptive-icon canvas.
+
+    The path data and stroke widths are the SVG's own, in its 128 x 128 space. The group maps that space onto the
+    canvas: pivot at the SVG centre (64, 64), scale 0.72 and translate (-10, -11.5), so the artwork (about x 19..109,
+    y 36.5..96 in SVG units, stroke included) ends up as a 65 x 43 dp shape centred on the canvas, inside the central
+    66 dp safe zone that every launcher mask keeps. Gradient coordinates are in the same SVG space.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="64"
+        android:pivotY="64"
+        android:scaleX="0.72"
+        android:scaleY="0.72"
+        android:translateX="-10"
+        android:translateY="-11.5">
+        <!-- Echo wave: the main path shifted down 6 units, thinner and faint. -->
+        <group android:translateY="6">
+            <path
+                android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+                android:strokeWidth="7"
+                android:strokeAlpha="0.35"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round">
+                <aapt:attr name="android:strokeColor">
+                    <gradient
+                        android:type="linear"
+                        android:startX="24"
+                        android:startY="0"
+                        android:endX="104"
+                        android:endY="0">
+                        <item
+                            android:color="#8B7CFF"
+                            android:offset="0" />
+                        <item
+                            android:color="#4FD1C5"
+                            android:offset="1" />
+                    </gradient>
+                </aapt:attr>
+            </path>
+        </group>
+        <path
+            android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+            android:strokeWidth="10"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="24"
+                    android:startY="0"
+                    android:endX="104"
+                    android:endY="0">
+                    <item
+                        android:color="#8B7CFF"
+                        android:offset="0" />
+                    <item
+                        android:color="#4FD1C5"
+                        android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

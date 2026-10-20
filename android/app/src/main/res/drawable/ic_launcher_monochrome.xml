@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: the same wave and echo wave as ic_launcher_foreground, single colour (the system tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="64"
+        android:pivotY="64"
+        android:scaleX="0.72"
+        android:scaleY="0.72"
+        android:translateX="-10"
+        android:translateY="-11.5">
+        <group android:translateY="6">
+            <path
+                android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+                android:strokeColor="#FF000000"
+                android:strokeWidth="7"
+                android:strokeAlpha="0.35"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+        </group>
+        <path
+            android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="10"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

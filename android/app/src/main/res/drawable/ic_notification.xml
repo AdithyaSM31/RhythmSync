@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for the foreground-service notification: the sync wave in white (alpha only). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <group
+        android:translateX="-16"
+        android:translateY="-18">
+        <group android:translateY="6">
+            <path
+                android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+                android:strokeColor="#FFFFFFFF"
+                android:strokeWidth="7"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round" />
+        </group>
+        <path
+            android:pathData="M24 64 C 34 34, 46 34, 54 64 S 74 94, 84 64 S 98 40, 104 52"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="10"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
