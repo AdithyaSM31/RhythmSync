@@ -114,6 +114,46 @@ class ControlCodecTest {
     }
 
     @Test
+    fun testNonFiniteStatsAreWrittenAsQuotedLiterals() {
+        val hb = Heartbeat(
+            Stats = HeartbeatStats(
+                LossPct = Double.NaN,
+                LatePct = Double.POSITIVE_INFINITY,
+                DriftPpm = Double.NEGATIVE_INFINITY,
+                FitResidualMs = 0.18,
+                SyncErrorMs = Double.NaN,
+                State = "Syncing"
+            )
+        )
+        val frame = ControlCodec.encode(hb)
+        val body = String(frame, 4, frame.size - 4, Charsets.UTF_8)
+        assertTrue(body, body.contains("\"LossPct\":\"NaN\""))
+        assertTrue(body, body.contains("\"LatePct\":\"Infinity\""))
+        assertTrue(body, body.contains("\"DriftPpm\":\"-Infinity\""))
+        assertTrue(body, body.contains("\"FitResidualMs\":0.18"))
+    }
+
+    @Test
+    fun testQuotedAndLegacyUnquotedNonFiniteLiteralsDecode() {
+        fun decode(json: String) = ControlCodec.decodePayload(json.toByteArray()) as Heartbeat
+
+        val quoted = decode(
+            """{"type":"Heartbeat","Stats":{"LossPct":"NaN","LatePct":"Infinity","DriftPpm":"-Infinity","FitResidualMs":"0.5","SyncErrorMs":1,"State":"Syncing"}}"""
+        )
+        assertTrue(quoted.Stats!!.LossPct.isNaN())
+        assertEquals(Double.POSITIVE_INFINITY, quoted.Stats!!.LatePct, 0.0)
+        assertEquals(Double.NEGATIVE_INFINITY, quoted.Stats!!.DriftPpm, 0.0)
+        assertEquals(0.5, quoted.Stats!!.FitResidualMs, 0.0)
+        assertEquals(1.0, quoted.Stats!!.SyncErrorMs, 0.0)
+
+        val unquoted = decode(
+            """{"type":"Heartbeat","Stats":{"LossPct":NaN,"LatePct":0,"DriftPpm":0,"FitResidualMs":0,"SyncErrorMs":NaN,"State":"Syncing"}}"""
+        )
+        assertTrue(unquoted.Stats!!.LossPct.isNaN())
+        assertTrue(unquoted.Stats!!.SyncErrorMs.isNaN())
+    }
+
+    @Test
     fun testMaxMessageSizeExceededThrows() {
         // Construct prefix claiming length 70,000 bytes
         val buffer = java.nio.ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
