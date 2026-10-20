@@ -1,0 +1,17 @@
+# Gradle and Android build output
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+*.apk
+*.aab
+
+# JVM crash dumps
+hs_err_pid*.log
+replay_pid*.log
+
+# IDE
+.idea/
+*.iml
+.kotlin/
