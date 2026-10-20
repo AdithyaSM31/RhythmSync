@@ -1,0 +1,6 @@
+# Scripts must keep LF so they run on Linux/macOS and in CI; the Windows batch file needs CRLF.
+gradlew text eol=lf
+*.kts text eol=lf
+*.sh text eol=lf
+*.properties text eol=lf
+gradlew.bat text eol=crlf
