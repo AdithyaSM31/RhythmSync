@@ -3,6 +3,7 @@ package com.rhythmsync.android.audio
 import com.rhythmsync.android.service.RhythmSyncService
 import com.rhythmsync.android.service.ServiceMode
 import com.rhythmsync.android.service.ServiceStatus
+import android.content.pm.ServiceInfo
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -34,5 +35,16 @@ class RhythmSyncServiceTest {
         assertEquals(ServiceMode.Client, clientStatus.mode)
         assertTrue(clientStatus.isRunning)
         assertEquals("In Sync (+0.12 ms)", clientStatus.details)
+    }
+
+    @Test
+    fun testForegroundServiceTypes() {
+        val playback = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        val mic = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        assertEquals(playback, RhythmSyncService.foregroundServiceType(ServiceMode.Client, true))
+        assertEquals(playback, RhythmSyncService.foregroundServiceType(ServiceMode.Idle, true))
+        assertEquals(playback or mic, RhythmSyncService.foregroundServiceType(ServiceMode.Host, true))
+        // Without RECORD_AUDIO the microphone type must not be requested (SecurityException on Android 14).
+        assertEquals(playback, RhythmSyncService.foregroundServiceType(ServiceMode.Host, false))
     }
 }

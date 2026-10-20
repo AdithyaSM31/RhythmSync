@@ -11,11 +11,15 @@
     <!-- Foreground Service & Power Permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Host mode records audio (AudioRecord) from a foreground service; Android 14 requires the matching type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="RhythmSync"
         android:supportsRtl="true"
         android:theme="@style/Theme.RhythmSync">
@@ -35,6 +39,6 @@
             android:name=".service.RhythmSyncService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback|microphone" />
     </application>
 </manifest>

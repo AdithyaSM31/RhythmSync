@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Binder
@@ -16,6 +18,8 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.rhythmsync.android.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,7 +44,8 @@ data class ServiceStatus(
  * Android Foreground Service managing audio playback and streaming lifecycles.
  *
  * Holds:
- * 1. [PowerManager.PARTIAL_WAKE_LOCK] ensuring the CPU stays active while screen is off.
+ * 1. [PowerManager.PARTIAL_WAKE_LOCK] ensuring the CPU stays active while screen is off (held for as long as the
+ *    service runs; released by [ACTION_STOP] and in [onDestroy]).
  * 2. [WifiManager.WifiLock] ([WifiManager.WIFI_MODE_FULL_LOW_LATENCY]) reducing network jitter.
  * 3. [WifiManager.MulticastLock] allowing discovery beacon reception while device is locked.
  * 4. Ongoing media notification on channel 'rhythmsync_playback'.
@@ -56,6 +61,19 @@ class RhythmSyncService : Service() {
         const val ACTION_START_CLIENT = "com.rhythmsync.android.action.START_CLIENT"
         const val ACTION_STOP = "com.rhythmsync.android.action.STOP"
         const val ACTION_UPDATE_STATUS = "com.rhythmsync.android.action.UPDATE_STATUS"
+
+        /**
+         * The foreground-service type to declare. Playback is always a media-playback service; host mode also
+         * records audio, which on Android 14+ needs the microphone type, and that type may only be requested while
+         * RECORD_AUDIO is granted (otherwise starting the service throws a SecurityException).
+         */
+        fun foregroundServiceType(mode: ServiceMode, hasRecordAudioPermission: Boolean): Int {
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            if (mode == ServiceMode.Host && hasRecordAudioPermission) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            return type
+        }
 
         fun startHost(context: Context) {
             val intent = Intent(context, RhythmSyncService::class.java).apply {
@@ -135,12 +153,12 @@ class RhythmSyncService : Service() {
             ACTION_START_HOST -> {
                 acquireLocks()
                 _serviceStatus.value = ServiceStatus(ServiceMode.Host, true, "Host: Streaming")
-                startForegroundWithNotification("Host Mode", "Streaming to clients...")
+                startForegroundWithNotification("Host Mode", "Streaming to clients...", ServiceMode.Host)
             }
             ACTION_START_CLIENT -> {
                 acquireLocks()
                 _serviceStatus.value = ServiceStatus(ServiceMode.Client, true, "Client: Synchronizing")
-                startForegroundWithNotification("Client Mode", "Connected and in sync")
+                startForegroundWithNotification("Client Mode", "Connected and in sync", ServiceMode.Client)
             }
             ACTION_STOP -> {
                 stopForegroundAndSelf()
@@ -173,7 +191,8 @@ class RhythmSyncService : Service() {
                 val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     WifiManager.WIFI_MODE_FULL_LOW_LATENCY
                 } else {
-                    3 // WIFI_MODE_FULL_HIGH_PERF
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 }
                 wifiLock = wifiManager.createWifiLock(wifiMode, "RhythmSync::WifiLock")?.apply {
                     setReferenceCounted(false)
@@ -188,7 +207,9 @@ class RhythmSyncService : Service() {
 
     private fun acquireLocks() {
         try {
-            wakeLock?.let { if (!it.isHeld) it.acquire(10 * 60 * 1000L /* 10 min fallback */) }
+            // No timeout: a timed lock would drop after minutes and stop audio with the screen off.
+            // It is released by releaseLocks() on stop and in onDestroy().
+            wakeLock?.let { if (!it.isHeld) it.acquire() }
         } catch (_: Throwable) {}
 
         try {
@@ -247,21 +268,23 @@ class RhythmSyncService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(content)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
             .build()
     }
 
-    private fun startForegroundWithNotification(title: String, content: String) {
+    private fun startForegroundWithNotification(title: String, content: String, mode: ServiceMode) {
         val notification = buildNotification(title, content)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                foregroundServiceType(mode, hasMic)
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
