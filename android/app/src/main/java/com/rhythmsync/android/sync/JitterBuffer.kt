@@ -19,6 +19,7 @@ class JitterBuffer(val capacity: Int = 256) {
     var consumedThrough: Long = -1L
         private set
 
+    @Volatile
     var lateCount: Long = 0L
         private set
 
@@ -28,6 +29,7 @@ class JitterBuffer(val capacity: Int = 256) {
     var rejectedCount: Long = 0L
         private set
 
+    @Volatile
     var acceptedCount: Long = 0L
         private set
 

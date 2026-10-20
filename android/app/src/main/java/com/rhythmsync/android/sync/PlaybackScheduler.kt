@@ -36,6 +36,11 @@ class PlaybackScheduler(
     var isAwaitingContent: Boolean = false
         private set
 
+    /** Frames concealed since construction (cumulative; read by the heartbeat to compute loss over a window). */
+    @Volatile
+    var concealedFrames: Long = 0L
+        private set
+
     var currentOffsetMs: Double = 0.0
         private set
 
@@ -175,6 +180,7 @@ class PlaybackScheduler(
      * Conceals a missing 240-frame (480 floats) audio frame using gain decay and splicing.
      */
     fun concealMissingFrame(output: FloatArray) {
+        concealedFrames++
         consecutiveLostFrames++
         val m = consecutiveLostFrames
 

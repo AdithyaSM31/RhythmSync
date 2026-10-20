@@ -10,13 +10,14 @@ import com.rhythmsync.android.sync.SyncState
 import java.io.Closeable
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
-import kotlin.random.Random
 
 class ClientSession(
-    val deviceId: String = "client-" + Random.nextLong(1, 1_000_000_000).toString(16),
+    // The Windows host parses Hello.DeviceId as a Guid, so it must be a UUID string.
+    val deviceId: String = UUID.randomUUID().toString(),
     val deviceName: String = "Android Device",
     val preferredAudioPort: Int = 47802,
     val clockNowTicks: () -> Long = { System.nanoTime() / 100L }
@@ -69,6 +70,8 @@ class ClientSession(
     private var scheduler: PlaybackScheduler? = null
     private var audioPlayer: AudioTrackPlayer? = null
     private var eqProcessor: EqProcessor? = null
+
+    private var statsBuilder = HeartbeatStatsBuilder()
 
     private var lastHeardTicks: Long = 0L
     private var lastHeartbeatTicks: Long = 0L
@@ -152,6 +155,7 @@ class ClientSession(
 
             val est = ClockEstimator()
             clockEstimator = est
+            statsBuilder = HeartbeatStatsBuilder() // new session: counters restart from zero
 
             val clockChan = UdpDatagramChannel(InetSocketAddress(0))
             clockChannel = clockChan
@@ -293,13 +297,17 @@ class ClientSession(
             // 6. Send periodic heartbeat
             if (now - lastHeartbeatTicks >= HEARTBEAT_INTERVAL_TICKS) {
                 lastHeartbeatTicks = now
-                val stats = HeartbeatStats(
-                    LossPct = 0.0,
-                    LatePct = (jitterBuffer?.lateCount?.toDouble() ?: 0.0),
-                    DriftPpm = est?.driftPpm ?: 0.0,
-                    FitResidualMs = est?.fitResidualMs ?: 0.0,
-                    SyncErrorMs = sched?.lastSyncError ?: 0.0,
-                    State = stateRef.get().name
+                val jb = jitterBuffer
+                val stats = statsBuilder.build(
+                    nowTicks = now,
+                    received = jb?.acceptedCount ?: 0L,
+                    late = jb?.lateCount ?: 0L,
+                    concealed = sched?.concealedFrames ?: 0L,
+                    playing = player?.isPlaying == true,
+                    syncErrorMs = sched?.lastSyncError ?: Double.NaN,
+                    driftPpm = est?.driftPpm ?: 0.0,
+                    fitResidualMs = est?.fitResidualMs ?: 0.0,
+                    state = stateRef.get().name
                 )
                 sendControl(Heartbeat(stats))
             }
