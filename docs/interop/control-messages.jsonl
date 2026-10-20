@@ -1,0 +1,15 @@
+{"type":"Hello","DeviceId":"e0b5b111-6677-4c07-b353-2bf9b4862dc7","DeviceName":"Living Room PC","PairingCode":"4821","ProtocolVersion":2,"AudioPort":47802}
+{"type":"Welcome","SessionId":2291772091,"SampleRate":48000,"Channels":2,"FrameSamples":240,"TargetLatencyMs":250,"AudioPort":47802,"ClockPort":47803}
+{"type":"Reject","Reason":"BadCode"}
+{"type":"Reject","Reason":"LockedOut"}
+{"type":"Reject","Reason":"VersionMismatch"}
+{"type":"Reject","Reason":"SessionFull"}
+{"type":"Ready"}
+{"type":"Heartbeat","Stats":null}
+{"type":"Heartbeat","Stats":{"LossPct":0.5,"LatePct":0.25,"DriftPpm":-14.2,"FitResidualMs":0.18,"SyncErrorMs":0.32,"State":"InSync"}}
+{"type":"Heartbeat","Stats":{"LossPct":"NaN","LatePct":"NaN","DriftPpm":0,"FitResidualMs":0.18,"SyncErrorMs":"NaN","State":"Syncing"}}
+{"type":"Heartbeat","Stats":{"LossPct":"NaN","LatePct":"Infinity","DriftPpm":"-Infinity","FitResidualMs":0.18,"SyncErrorMs":"NaN","State":"Degraded"}}
+{"type":"SetDeviceSettings","Volume":0.75,"OffsetMs":-12.5,"EqGainsDb":null}
+{"type":"SetDeviceSettings","Volume":0.5,"OffsetMs":3.25,"EqGainsDb":[-9,-6,-1,2,1,0,0,1,2,1.5]}
+{"type":"SetLatency","TargetLatencyMs":300}
+{"type":"Bye"}

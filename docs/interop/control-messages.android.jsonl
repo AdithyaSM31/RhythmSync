@@ -1,0 +1,7 @@
+{"type":"Hello","DeviceId":"e0b5b111-6677-4c07-b353-2bf9b4862dc7","DeviceName":"Pixel 8","PairingCode":"4821","ProtocolVersion":2,"AudioPort":47802}
+{"type":"Ready"}
+{"type":"Heartbeat","Stats":null}
+{"type":"Heartbeat","Stats":{"LossPct":0.5,"LatePct":0.25,"DriftPpm":-14.2,"FitResidualMs":0.18,"SyncErrorMs":0.32,"State":"InSync"}}
+{"type":"Heartbeat","Stats":{"LossPct":"NaN","LatePct":"NaN","DriftPpm":0.0,"FitResidualMs":0.18,"SyncErrorMs":"NaN","State":"Syncing"}}
+{"type":"Heartbeat","Stats":{"LossPct":"NaN","LatePct":"Infinity","DriftPpm":"-Infinity","FitResidualMs":0.18,"SyncErrorMs":"NaN","State":"Degraded"}}
+{"type":"Bye"}
